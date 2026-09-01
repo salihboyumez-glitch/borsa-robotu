@@ -1,0 +1,23 @@
+# Gizli anahtarlar
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Yerel Python ortamı ve önbellek
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Çalışma zamanı verileri
+*.log
+*.error.log
+.opportunity_telegram_state.json
+.background_scanner_state.json
+
+# macOS / editör
+.DS_Store
+.idea/
+.vscode/
