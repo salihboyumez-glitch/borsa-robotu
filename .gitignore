@@ -15,6 +15,10 @@ __pycache__/
 *.log
 *.error.log
 .opportunity_telegram_state.json
+.news_telegram_state.json
+.unusual_telegram_state.json
+.background_daemon.lock
+.background_scanner.lock
 .background_scanner_state.json
 
 # macOS / editör

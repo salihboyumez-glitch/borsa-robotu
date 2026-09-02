@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,6 +26,7 @@ from watchlist import BASE_WATCHLIST, TRADINGVIEW_SHARED_WATCHLIST
 PROJECT_DIR = Path(__file__).resolve().parent
 LOCK_FILE = PROJECT_DIR / ".background_scanner.lock"
 UNUSUAL_STATE_FILE = PROJECT_DIR / ".unusual_telegram_state.json"
+NEWS_STATE_FILE = PROJECT_DIR / ".news_telegram_state.json"
 NEW_YORK = ZoneInfo("America/New_York")
 load_dotenv(PROJECT_DIR / ".env")
 
@@ -71,6 +73,106 @@ def delivery_slot(now_ny):
     if (15 * 60 + 15) <= minutes <= (16 * 60 + 15):
         return "kapanis_oncesi"
     return None
+
+
+def _news_id(symbol, article):
+    return "|".join(
+        [
+            str(symbol),
+            str(article.get("id", "")),
+            str(article.get("datetime", "")),
+            str(article.get("url", "")),
+            str(article.get("headline", "")),
+        ]
+    )
+
+
+def send_new_news_alerts(symbols):
+    """Piyasa saatinden bağımsız olarak yalnızca yeni Finnhub haberlerini gönderir."""
+    api_key = os.getenv("FINNHUB_API_KEY")
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not api_key or not token or not chat_id:
+        return 0, "Haber/Telegram bilgileri eksik"
+
+    try:
+        state = json.loads(NEWS_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    seen = set(state.get("seen", []))
+    first_run = not NEWS_STATE_FILE.exists()
+    today = datetime.now(NEW_YORK).date()
+    collected = []
+    all_current_ids = set()
+
+    # Finnhub'un dakika kotasını aşmamak için istekleri aralıklı yap.
+    for index, symbol in enumerate(dict.fromkeys(symbols)):
+        try:
+            response = requests.get(
+                "https://finnhub.io/api/v1/company-news",
+                params={
+                    "symbol": symbol,
+                    "from": (today - timedelta(days=1)).isoformat(),
+                    "to": today.isoformat(),
+                    "token": api_key,
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+            articles = response.json()
+            if not isinstance(articles, list):
+                articles = []
+            for article in articles:
+                article_id = _news_id(symbol, article)
+                all_current_ids.add(article_id)
+                if article_id not in seen:
+                    collected.append((int(article.get("datetime", 0) or 0), symbol, article_id, article))
+        except Exception as exc:
+            print(f"Haber kontrolü başarısız: {symbol} — {type(exc).__name__}", file=sys.stderr)
+        if index + 1 < len(symbols):
+            time.sleep(1.05)
+
+    if first_run:
+        initial = sorted(all_current_ids)[-5000:]
+        NEWS_STATE_FILE.write_text(
+            json.dumps({"seen": initial, "initialized_at": datetime.now().isoformat()}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return 0, f"Haber radarı başlatıldı; {len(initial)} mevcut haber başlangıç kabul edildi"
+
+    collected.sort(key=lambda item: item[0])
+    delivered = []
+    # Tek mesajı Telegram sınırının altında tut; kalanlar sonraki kontrolde gönderilir.
+    for timestamp, symbol, article_id, article in collected[:8]:
+        headline = str(article.get("headline", "Yeni haber")).strip()
+        source = str(article.get("source", "Kaynak belirtilmedi")).strip()
+        url = str(article.get("url", "")).strip()
+        news_time = datetime.fromtimestamp(timestamp, NEW_YORK).strftime("%Y-%m-%d %H:%M ET") if timestamp else "Saat bilinmiyor"
+        message = "\n".join(
+            [
+                f"📰 YENİ HABER — {symbol}",
+                headline[:500],
+                f"🕒 {news_time}",
+                f"Kaynak: {source[:100]}",
+                url,
+                "⚠️ Haber bildirimi yatırım tavsiyesi değildir.",
+            ]
+        )
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": message, "disable_web_page_preview": True},
+            timeout=20,
+        )
+        response.raise_for_status()
+        delivered.append(article_id)
+
+    if delivered:
+        seen.update(delivered)
+        NEWS_STATE_FILE.write_text(
+            json.dumps({"seen": sorted(seen)[-5000:], "updated_at": datetime.now().isoformat()}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return len(delivered), f"Yeni haber={len(collected)}, gönderilen={len(delivered)}"
 
 
 def send_unusual_alerts(unusual):
@@ -242,6 +344,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Telegram'a göndermeden test et")
     args = parser.parse_args()
     now_ny = datetime.now(NEW_YORK)
+    try:
+        news_count, news_status = send_new_news_alerts(BASE_WATCHLIST)
+        print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
+    except Exception as exc:
+        print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
     if not should_run(now_ny, force=args.force):
         print(f"{now_ny.isoformat()} — piyasa sonrası çalışma penceresi bekleniyor")
         return 0
