@@ -69,14 +69,10 @@ def should_run(now_ny, force=False):
 
 
 def delivery_slot(now_ny):
-    """Normal TOP 5 mesajlarını günde üç zaman dilimiyle sınırlar."""
+    """Piyasa açıkken TOP 5 analizini saatte bir kez göndermek için anahtar üretir."""
     minutes = now_ny.hour * 60 + now_ny.minute
-    if (9 * 60 + 35) <= minutes < (10 * 60 + 35):
-        return "acilis"
-    if (12 * 60) <= minutes < (13 * 60 + 15):
-        return "seans_ortasi"
-    if (15 * 60 + 15) <= minutes <= (16 * 60 + 15):
-        return "kapanis_oncesi"
+    if (9 * 60 + 35) <= minutes <= (16 * 60 + 15):
+        return f"saat_{now_ny:%H}"
     return None
 
 
