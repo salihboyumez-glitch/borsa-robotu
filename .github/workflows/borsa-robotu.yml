@@ -2,8 +2,14 @@ name: Borsa Robotu 7/24
 
 on:
   schedule:
-    - cron: "19,49 * * * *"
+    # Hafta içi mevcut 15 dakikalık piyasa akışının dışında çalışır.
+    - cron: "19,49 0-12,22-23 * * 1-5"
+    # Hafta sonu haberleri için tüm gün çalışır.
+    - cron: "19,49 * * * 0,6"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: borsa-robotu-scanner
@@ -28,28 +34,20 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Mesaj durumunu geri yükle
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .news_telegram_state.json
-            .opportunity_telegram_state.json
-            .unusual_telegram_state.json
-          key: telegram-state-${{ github.run_id }}
-          restore-keys: telegram-state-
-
       - name: Gereksinimleri yükle
         run: python -m pip install -r requirements.txt
 
       - name: Haber ve piyasa taramasını çalıştır
         run: python background_scanner.py
 
-      - name: Mesaj durumunu sakla
+      - name: Mesaj durumunu ortak geçmişe kaydet
         if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .news_telegram_state.json
-            .opportunity_telegram_state.json
-            .unusual_telegram_state.json
-          key: telegram-state-${{ github.run_id }}
+        run: |
+          git config user.name "borsa-robotu-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f .news_telegram_state.json .opportunity_telegram_state.json .unusual_telegram_state.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update scanner state [skip ci]"
+            git pull --rebase
+            git push
+          fi
