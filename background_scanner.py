@@ -5,6 +5,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
@@ -28,6 +29,10 @@ LOCK_FILE = PROJECT_DIR / ".background_scanner.lock"
 UNUSUAL_STATE_FILE = PROJECT_DIR / ".unusual_telegram_state.json"
 NEWS_STATE_FILE = PROJECT_DIR / ".news_telegram_state.json"
 NEW_YORK = ZoneInfo("America/New_York")
+PAYWALLED_NEWS_DOMAINS = {
+    "seekingalpha.com",
+    "www.seekingalpha.com",
+}
 load_dotenv(PROJECT_DIR / ".env")
 
 
@@ -87,6 +92,17 @@ def _news_id(symbol, article):
     )
 
 
+def _is_paywalled_news(article):
+    """Telegram'a ücretli abonelik isteyen haber bağlantılarını gönderme."""
+    source = str(article.get("source", "")).strip().casefold()
+    url = str(article.get("url", "")).strip()
+    hostname = (urlparse(url).hostname or "").casefold()
+    return "seeking alpha" in source or any(
+        hostname == domain or hostname.endswith(f".{domain}")
+        for domain in PAYWALLED_NEWS_DOMAINS
+    )
+
+
 def send_new_news_alerts(symbols):
     """Piyasa saatinden bağımsız olarak yalnızca yeni Finnhub haberlerini gönderir."""
     api_key = os.getenv("FINNHUB_API_KEY")
@@ -104,6 +120,7 @@ def send_new_news_alerts(symbols):
     today = datetime.now(NEW_YORK).date()
     collected = []
     all_current_ids = set()
+    skipped_paywalled_ids = set()
 
     # Finnhub'un dakika kotasını aşmamak için istekleri aralıklı yap.
     for index, symbol in enumerate(dict.fromkeys(symbols)):
@@ -125,6 +142,9 @@ def send_new_news_alerts(symbols):
             for article in articles:
                 article_id = _news_id(symbol, article)
                 all_current_ids.add(article_id)
+                if _is_paywalled_news(article):
+                    skipped_paywalled_ids.add(article_id)
+                    continue
                 if article_id not in seen:
                     collected.append((int(article.get("datetime", 0) or 0), symbol, article_id, article))
         except Exception as exc:
@@ -166,13 +186,17 @@ def send_new_news_alerts(symbols):
         response.raise_for_status()
         delivered.append(article_id)
 
-    if delivered:
+    if delivered or skipped_paywalled_ids:
         seen.update(delivered)
+        seen.update(skipped_paywalled_ids)
         NEWS_STATE_FILE.write_text(
             json.dumps({"seen": sorted(seen)[-5000:], "updated_at": datetime.now().isoformat()}, ensure_ascii=False),
             encoding="utf-8",
         )
-    return len(delivered), f"Yeni haber={len(collected)}, gönderilen={len(delivered)}"
+    return len(delivered), (
+        f"Yeni ücretsiz haber={len(collected)}, gönderilen={len(delivered)}, "
+        f"ücretli kaynak atlandı={len(skipped_paywalled_ids)}"
+    )
 
 
 def send_unusual_alerts(unusual):
