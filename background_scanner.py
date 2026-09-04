@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -107,6 +108,18 @@ IMPORTANT_NEWS_TERMS = {
     "downgrade", "upgrade",
 }
 
+COMPANY_HEADLINE_ALIASES = {
+    "AMD": ("ADVANCED MICRO DEVICES",),
+    "AVGO": ("BROADCOM",),
+    "AAPL": ("APPLE",),
+    "AMZN": ("AMAZON",),
+    "GOOG": ("GOOGLE", "ALPHABET"),
+    "META": ("META PLATFORMS", "FACEBOOK"),
+    "MSFT": ("MICROSOFT",),
+    "NVDA": ("NVIDIA",),
+    "TSLA": ("TESLA",),
+}
+
 
 def _is_important_news(article):
     text = " ".join(
@@ -125,6 +138,40 @@ def _news_id(symbol, article):
             str(article.get("headline", "")),
         ]
     )
+
+
+def _article_key(article):
+    """Aynı Finnhub haberini farklı sembol sorgularında tekilleştirir."""
+    return "|".join(
+        [
+            str(article.get("id", "")),
+            str(article.get("datetime", "")),
+            str(article.get("url", "")),
+            str(article.get("headline", "")),
+        ]
+    )
+
+
+def _news_is_relevant(symbol, article):
+    """Çok sembollü Finnhub eşleşmelerinde yanlış şirket etiketini engeller."""
+    symbol = str(symbol).strip().upper()
+    related = {
+        item.strip().upper()
+        for item in re.split(r"[,;\s]+", str(article.get("related", "")))
+        if item.strip()
+    }
+    headline = str(article.get("headline", "")).upper()
+    if related and symbol not in related:
+        return False
+    if related == {symbol}:
+        return True
+    ticker_in_headline = len(symbol) > 1 and re.search(
+        rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])", headline
+    )
+    alias_in_headline = any(
+        alias in headline for alias in COMPANY_HEADLINE_ALIASES.get(symbol, ())
+    )
+    return bool(ticker_in_headline or alias_in_headline)
 
 
 def _is_paywalled_news(article):
@@ -160,6 +207,8 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
     collected = []
     all_current_ids = set()
     skipped_paywalled_ids = set()
+    skipped_irrelevant_ids = set()
+    collected_article_keys = set()
 
     # Finnhub'un dakika kotasını aşmamak için istekleri aralıklı yap.
     for index, symbol in enumerate(dict.fromkeys(symbols)):
@@ -184,8 +233,13 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
                 if _is_paywalled_news(article):
                     skipped_paywalled_ids.add(article_id)
                     continue
-                if article_id not in seen:
+                if not _news_is_relevant(symbol, article):
+                    skipped_irrelevant_ids.add(article_id)
+                    continue
+                article_key = _article_key(article)
+                if article_id not in seen and article_key not in collected_article_keys:
                     collected.append((int(article.get("datetime", 0) or 0), symbol, article_id, article))
+                    collected_article_keys.add(article_key)
         except Exception as exc:
             print(f"Haber kontrolü başarısız: {symbol} — {type(exc).__name__}", file=sys.stderr)
         if index + 1 < len(symbols):
@@ -228,16 +282,18 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
         response.raise_for_status()
         delivered.append(article_id)
 
-    if delivered or skipped_paywalled_ids:
+    if delivered or skipped_paywalled_ids or skipped_irrelevant_ids:
         seen.update(delivered)
         seen.update(skipped_paywalled_ids)
+        seen.update(skipped_irrelevant_ids)
         NEWS_STATE_FILE.write_text(
             json.dumps({"seen": sorted(seen)[-5000:], "updated_at": datetime.now().isoformat()}, ensure_ascii=False),
             encoding="utf-8",
         )
     return len(delivered), (
         f"Yeni ücretsiz haber={len(collected)}, gönderilen={len(delivered)}, "
-        f"ücretli kaynak atlandı={len(skipped_paywalled_ids)}"
+        f"ücretli kaynak atlandı={len(skipped_paywalled_ids)}, "
+        f"ilgisiz sembol eşleşmesi atlandı={len(skipped_irrelevant_ids)}"
     )
 
 
