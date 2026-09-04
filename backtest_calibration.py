@@ -47,6 +47,9 @@ def _atr(frame, period=14):
 
 
 def symbol_history(symbol, frame):
+    required = {"Close", "High", "Low", "Volume"}
+    if not isinstance(frame, pd.DataFrame) or frame.empty or not required.issubset(frame.columns):
+        return pd.DataFrame()
     frame = frame.dropna(subset=["Close", "High", "Low"]).copy()
     if len(frame) < 220:
         return pd.DataFrame()
@@ -145,6 +148,7 @@ def write_report(payload):
         f"- Model sinyali: %{overall['rise_rate']:.1f} (sinyalsiz ortalama: %{baseline['rise_rate']:.1f}, n={overall['n']})",
         f"- %95 güven aralığı: %{overall['rise_ci_low']:.1f}–%{overall['rise_ci_high']:.1f}",
         f"- Üç günde stop öncesi 2R hedef başarısı: %{overall['jump_rate']:.1f}",
+        f"- Yön katkısı: {payload['direction_edge_pp']:+.1f} puan — {payload['verdict']}",
         "",
         "## Piyasa rejimleri",
         "",
@@ -182,8 +186,21 @@ def write_report(payload):
             f"- {payload['notes']}",
             "- n<30 olan gruplar Telegram çıktısında olasılık olarak gösterilmez.",
             "",
+            "## Hisse bazında ayrı test",
+            "",
+            "| Hisse | Sinyal yükseliş | Sinyal n | Sinyalsiz | Fark | %95 güven aralığı |",
+            "|---|---:|---:|---:|---:|---:|",
         ]
     )
+    for item in payload["by_symbol"]:
+        signal = item["signal"]
+        baseline_item = item["baseline"]
+        signal_text = f"%{signal['rise_rate']:.1f}" if signal["n"] >= 30 else "yetersiz"
+        lines.append(
+            f"| {item['symbol']} | {signal_text} | {signal['n']} | %{baseline_item['rise_rate']:.1f} | "
+            f"{item['edge_pp']:+.1f} | %{signal['rise_ci_low']:.1f}–%{signal['rise_ci_high']:.1f} |"
+        )
+    lines.append("")
     REPORT_OUTPUT.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -191,7 +208,10 @@ def main():
     symbols = list(dict.fromkeys(BASE_WATCHLIST))
     batch = yf.download(symbols, start=START, interval="1d", group_by="ticker", auto_adjust=True, threads=True, progress=False)
     histories = [symbol_history(symbol, _frame(batch, symbol)) for symbol in symbols]
-    universe = pd.concat([item for item in histories if not item.empty], ignore_index=True)
+    valid_histories = [item for item in histories if not item.empty]
+    if not valid_histories:
+        raise RuntimeError("Hiçbir sembol için geçmiş fiyat verisi alınamadı; mevcut rapor korunuyor.")
+    universe = pd.concat(valid_histories, ignore_index=True)
     spy_batch = yf.download("SPY", start=START, interval="1d", auto_adjust=True, progress=False)
     if isinstance(spy_batch.columns, pd.MultiIndex):
         spy_batch.columns = spy_batch.columns.get_level_values(0)
@@ -235,17 +255,43 @@ def main():
         item["trained_mean"] = round(float(frame["trained_probability"].mean()), 1)
         calibration_table.append(item)
 
+    by_symbol = []
+    for symbol in sorted(set(test["Hisse"]).union(set(baseline_test["Hisse"]))):
+        signal_stats = stats(test[test["Hisse"] == symbol])
+        baseline_stats = stats(baseline_test[baseline_test["Hisse"] == symbol])
+        by_symbol.append(
+            {
+                "symbol": symbol,
+                "signal": signal_stats,
+                "baseline": baseline_stats,
+                "edge_pp": round(signal_stats["rise_rate"] - baseline_stats["rise_rate"], 1),
+            }
+        )
+
+    overall_stats = stats(test)
+    baseline_stats = stats(baseline_test)
+    direction_edge = round(overall_stats["rise_rate"] - baseline_stats["rise_rate"], 1)
+    if direction_edge < 3:
+        verdict = "Yön tahmininde pratik bir katkı gösteremedi"
+    elif direction_edge < 8:
+        verdict = "Küçük katkı; işlem maliyetleri avantajı silebilir"
+    else:
+        verdict = "Geçmiş testte anlamlı katkı var; gelecek garantisi değildir"
+
     payload = {
         "method_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "training_period": "2020-01-01..2024-12-31",
         "test_period": f"2025-01-01..{datetime.now(timezone.utc).date().isoformat()}",
         "symbols_requested": len(symbols),
-        "overall": stats(test),
-        "baseline": stats(baseline_test),
+        "overall": overall_stats,
+        "baseline": baseline_stats,
+        "direction_edge_pp": direction_edge,
+        "verdict": verdict,
         "regimes": regime_stats,
         "score_bins": score_bins,
         "calibration_bins": calibration_table,
+        "by_symbol": by_symbol,
         "notes": "3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır.",
     }
     OUTPUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

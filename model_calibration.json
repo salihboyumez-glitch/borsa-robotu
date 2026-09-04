@@ -18,6 +18,8 @@
     "rise_ci_low": 51.2,
     "rise_ci_high": 52.2
   },
+  "direction_edge_pp": -0.6,
+  "verdict": "Yön tahmininde pratik bir katkı gösteremedi",
   "regimes": {
     "bear": {
       "n": 160,
@@ -75,5 +77,6 @@
       "trained_mean": 53.2
     }
   ],
+  "by_symbol": [],
   "notes": "3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır."
 }

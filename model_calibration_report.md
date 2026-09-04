@@ -7,6 +7,7 @@
 - Model sinyali: %51.1 (sinyalsiz ortalama: %51.7, n=2080)
 - %95 güven aralığı: %48.9–%53.2
 - Üç günde stop öncesi 2R hedef başarısı: %3.9
+- Yön katkısı: -0.6 puan — Yön tahmininde pratik bir katkı gösteremedi
 
 ## Piyasa rejimleri
 
@@ -28,3 +29,7 @@
 - Hiç dokunulmamış test dönemi: 2025-01-01..2026-09-04
 - 3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır.
 - n<30 olan gruplar Telegram çıktısında olasılık olarak gösterilmez.
+
+## Hisse bazında ayrı test
+
+Hisse bazındaki tablo bir sonraki başarılı veri yenilemesinde otomatik üretilecektir. Veri sağlayıcı geçici olarak erişilemediği için mevcut doğrulanmış genel rapor korunmuştur.
