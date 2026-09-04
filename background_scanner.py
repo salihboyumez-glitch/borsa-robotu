@@ -23,6 +23,7 @@ from opportunity_scanner import (
     raw_metrics,
     score_opportunities,
 )
+from price_movement_alerts import mark_sent, movement_message, scan_movements
 from tradingview_sync import sync_shared_watchlist
 from watchlist import BASE_WATCHLIST, TRADINGVIEW_SHARED_WATCHLIST
 
@@ -463,6 +464,31 @@ def send_unusual_alerts(unusual):
     return len(delivered)
 
 
+def send_price_movement_alerts(symbols):
+    """Yeni eşik aşan fiyat hareketlerini Telegram'a gönderir."""
+    token = cfg.telegram_token()
+    chat_id = cfg.telegram_chat_id()
+    if not token or not chat_id:
+        return 0
+    alerts, state = scan_movements(symbols)
+    delivered = 0
+    for alert in alerts:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": movement_message(alert),
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        mark_sent(alert, state)
+        delivered += 1
+    return delivered
+
+
 def fetch_ntsk_context():
     context = {
         "FINAL": "—",
@@ -587,6 +613,16 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Telegram'a göndermeden test et")
     args = parser.parse_args()
     now_ny = datetime.now(NEW_YORK)
+    if args.komut == "hareket":
+        if not should_run(now_ny, force=args.force):
+            print(f"{now_ny.isoformat()} — hareket taraması piyasa penceresini bekliyor")
+            return 0
+        if args.dry_run:
+            print("Kuru çalıştırma: hareketler Telegram'a gönderilmedi")
+            return 0
+        count = send_price_movement_alerts(BASE_WATCHLIST)
+        print(f"{datetime.now().isoformat()} — fiyat hareketi taraması — sent={count}")
+        return 0
     if args.komut in ("haber", "hepsi"):
         if args.dry_run:
             print("Kuru çalıştırma: haberler Telegram'a gönderilmedi")
@@ -635,10 +671,7 @@ def main():
             else:
                 print(unusual[["Hisse", "Fiyat", "Günlük %", "Hacim Oranı"]].to_string(index=False))
             return 0
-        unusual_count = send_unusual_alerts(unusual) if args.komut in ("hareket", "hepsi") else 0
-        if args.komut == "hareket":
-            print(f"{datetime.now().isoformat()} — hareket taraması — new_unusual={unusual_count}")
-            return 0
+        unusual_count = send_unusual_alerts(unusual) if args.komut == "hepsi" else 0
         slot = delivery_slot(now_ny)
         if slot or args.force:
             sent, status = auto_send_top5(
