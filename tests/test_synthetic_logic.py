@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backtest_calibration import symbol_history
+from backtest_calibration import add_barrier_outcome, symbol_history
 from model_calibration import calibrated_lines, regime_summary_line
 from opportunity_scanner import TARGET_1_R, _levels_from_raw, score_opportunities
 
@@ -86,12 +86,27 @@ def test_calibration_message_contains_context_and_sample_size():
     assert "Düşen %41.0 (n=60)" in regimes
 
 
+def test_barrier_order_is_conservative():
+    rows = pd.DataFrame(
+        [
+            {"Stop": 95.0, "Hedef 1": 110.0, "future_low_1": 96.0, "future_high_1": 111.0,
+             "future_low_2": 96.0, "future_high_2": 108.0, "future_low_3": 96.0, "future_high_3": 108.0},
+            {"Stop": 95.0, "Hedef 1": 110.0, "future_low_1": 94.0, "future_high_1": 111.0,
+             "future_low_2": 96.0, "future_high_2": 111.0, "future_low_3": 96.0, "future_high_3": 111.0},
+            {"Stop": 95.0, "Hedef 1": 110.0, "future_low_1": 96.0, "future_high_1": 109.0,
+             "future_low_2": 96.0, "future_high_2": 109.0, "future_low_3": 96.0, "future_high_3": 109.0},
+        ]
+    )
+    assert add_barrier_outcome(rows)["future_jump"].tolist() == [1.0, 0.0, 0.0]
+
+
 if __name__ == "__main__":
     tests = [
         test_indicators_and_future_boundary,
         test_levels_keep_reward_risk_from_worst_entry,
         test_scored_rows_have_valid_trade_order,
         test_calibration_message_contains_context_and_sample_size,
+        test_barrier_order_is_conservative,
     ]
     for test in tests:
         test()
