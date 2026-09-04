@@ -15,6 +15,13 @@ class NewsRelevanceTests(unittest.TestCase):
         article = {"headline": "TAL Education Group (TAL) Reports Quarterly Results", "related": "WMT"}
         self.assertFalse(scanner._news_is_relevant("WMT", article))
 
+    def test_ollie_bargain_outlet_blocks_wmt(self):
+        article = {
+            "headline": "Ollie's Bargain Outlet (OLLI) Cuts Full-Year Sales Outlook",
+            "related": "WMT",
+        }
+        self.assertFalse(scanner._news_is_relevant("WMT", article))
+
     def test_explicit_hurn_ticker_blocks_ba(self):
         article = {"headline": "Huron Consulting Group (HURN) Raises Guidance", "related": "BA"}
         self.assertFalse(scanner._news_is_relevant("BA", article))
