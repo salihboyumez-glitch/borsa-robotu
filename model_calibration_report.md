@@ -1,12 +1,12 @@
 # Fırsat modeli doğrulama raporu
 
-Üretim zamanı (UTC): 2026-09-04T11:06:44.796902+00:00
+Üretim zamanı (UTC): 2026-09-04T11:18:13.299827+00:00
 
 ## Ayrı test sonucu
 
 - Model sinyali: %51.1 (sinyalsiz ortalama: %51.7, n=2080)
 - %95 güven aralığı: %48.9–%53.2
-- Sonraki 3 günde en az %5 sıçrama: %38.8
+- Üç günde stop öncesi 2R hedef başarısı: %3.9
 
 ## Piyasa rejimleri
 
@@ -26,5 +26,5 @@
 
 - Eğitim/kalibrasyon dönemi: 2020-01-01..2024-12-31
 - Hiç dokunulmamış test dönemi: 2025-01-01..2026-09-04
-- 3 işlem günü sonrası pozitif kapanış; sıçrama, sonraki 3 günde en az %5 gün içi yükseliş. Test verisi eğitimden ayrıdır.
+- 3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır.
 - n<30 olan gruplar Telegram çıktısında olasılık olarak gösterilmez.

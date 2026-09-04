@@ -34,7 +34,7 @@ def calibrated_lines(row, calibration=None):
     ci_high = float(bucket.get("rise_ci_high", 0))
     return [
         f"3G yükseliş: %{rise:.1f} (sinyalsiz ortalama: %{base_rate:.1f}, n={sample})",
-        f"%95 güven aralığı: %{ci_low:.1f}–%{ci_high:.1f} | 3G ≥%5 sıçrama: %{jump:.1f}",
+        f"%95 güven aralığı: %{ci_low:.1f}–%{ci_high:.1f} | 3G stop öncesi 2R hedef: %{jump:.1f}",
     ]
 
 
@@ -48,4 +48,3 @@ def regime_summary_line(calibration=None):
         if int(item.get("n", 0) or 0) >= MIN_SAMPLE_SIZE:
             parts.append(f"{label} %{float(item['rise_rate']):.1f} (n={int(item['n'])})")
     return " | ".join(parts)
-

@@ -1,20 +1,20 @@
 {
   "method_version": 1,
-  "generated_at": "2026-09-04T11:06:44.796902+00:00",
+  "generated_at": "2026-09-04T11:18:13.299827+00:00",
   "training_period": "2020-01-01..2024-12-31",
   "test_period": "2025-01-01..2026-09-04",
   "symbols_requested": 162,
   "overall": {
     "n": 2080,
     "rise_rate": 51.1,
-    "jump_rate": 38.8,
+    "jump_rate": 3.9,
     "rise_ci_low": 48.9,
     "rise_ci_high": 53.2
   },
   "baseline": {
     "n": 38893,
     "rise_rate": 51.7,
-    "jump_rate": 29.5,
+    "jump_rate": 2.2,
     "rise_ci_low": 51.2,
     "rise_ci_high": 52.2
   },
@@ -22,21 +22,21 @@
     "bear": {
       "n": 160,
       "rise_rate": 60.6,
-      "jump_rate": 43.8,
+      "jump_rate": 6.2,
       "rise_ci_low": 52.9,
       "rise_ci_high": 67.9
     },
     "bull": {
       "n": 1640,
       "rise_rate": 48.8,
-      "jump_rate": 37.4,
+      "jump_rate": 3.6,
       "rise_ci_low": 46.4,
       "rise_ci_high": 51.2
     },
     "sideways": {
       "n": 280,
       "rise_rate": 58.9,
-      "jump_rate": 44.3,
+      "jump_rate": 4.3,
       "rise_ci_low": 53.1,
       "rise_ci_high": 64.5
     }
@@ -45,21 +45,21 @@
     "70-79": {
       "n": 12,
       "rise_rate": 50.0,
-      "jump_rate": 41.7,
+      "jump_rate": 0.0,
       "rise_ci_low": 25.4,
       "rise_ci_high": 74.6
     },
     "80-89": {
       "n": 1867,
       "rise_rate": 51.0,
-      "jump_rate": 40.7,
+      "jump_rate": 4.2,
       "rise_ci_low": 48.8,
       "rise_ci_high": 53.3
     },
     "90-99": {
       "n": 201,
       "rise_rate": 51.2,
-      "jump_rate": 21.4,
+      "jump_rate": 1.5,
       "rise_ci_low": 44.4,
       "rise_ci_high": 58.1
     }
@@ -68,12 +68,12 @@
     {
       "n": 2080,
       "rise_rate": 51.1,
-      "jump_rate": 38.8,
+      "jump_rate": 3.9,
       "rise_ci_low": 48.9,
       "rise_ci_high": 53.2,
       "predicted_range": "50-59",
       "trained_mean": 53.2
     }
   ],
-  "notes": "3 işlem günü sonrası pozitif kapanış; sıçrama, sonraki 3 günde en az %5 gün içi yükseliş. Test verisi eğitimden ayrıdır."
+  "notes": "3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır."
 }

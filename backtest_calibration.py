@@ -55,7 +55,6 @@ def symbol_history(symbol, frame):
     low = frame["Low"].astype(float)
     volume = frame["Volume"].fillna(0).astype(float)
     average_volume = volume.rolling(20).mean()
-    future_high = pd.concat([high.shift(-1), high.shift(-2), high.shift(-3)], axis=1).max(axis=1)
     result = pd.DataFrame(index=frame.index)
     result["Hisse"] = symbol
     result["Veri Tarihi"] = pd.Index(frame.index).map(lambda value: pd.Timestamp(value).date().isoformat())
@@ -77,8 +76,28 @@ def symbol_history(symbol, frame):
     result["20G Destek"] = low.rolling(20).min()
     complete_future = close.shift(-3).notna()
     result["future_rise"] = np.where(complete_future, (close.shift(-3) > close).astype(float), np.nan)
-    result["future_jump"] = np.where(complete_future, (future_high / close - 1 >= 0.05).astype(float), np.nan)
+    for day in range(1, 4):
+        result[f"future_high_{day}"] = high.shift(-day)
+        result[f"future_low_{day}"] = low.shift(-day)
     return result.replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def add_barrier_outcome(scored):
+    """Üç günde hedefe stop öncesi ulaşmayı, aynı gün çakışmasında temkinli sayar."""
+    if scored.empty:
+        return scored
+    scored = scored.copy()
+    unresolved = pd.Series(True, index=scored.index)
+    outcome = pd.Series(0.0, index=scored.index)
+    for day in range(1, 4):
+        stop_hit = scored[f"future_low_{day}"] <= scored["Stop"]
+        target_hit = scored[f"future_high_{day}"] >= scored["Hedef 1"]
+        won = unresolved & target_hit & ~stop_hit
+        lost = unresolved & stop_hit
+        outcome.loc[won] = 1.0
+        unresolved.loc[won | lost] = False
+    scored["future_jump"] = outcome
+    return scored
 
 
 def market_regimes(spy):
@@ -125,7 +144,7 @@ def write_report(payload):
         "",
         f"- Model sinyali: %{overall['rise_rate']:.1f} (sinyalsiz ortalama: %{baseline['rise_rate']:.1f}, n={overall['n']})",
         f"- %95 güven aralığı: %{overall['rise_ci_low']:.1f}–%{overall['rise_ci_high']:.1f}",
-        f"- Sonraki 3 günde en az %5 sıçrama: %{overall['jump_rate']:.1f}",
+        f"- Üç günde stop öncesi 2R hedef başarısı: %{overall['jump_rate']:.1f}",
         "",
         "## Piyasa rejimleri",
         "",
@@ -187,6 +206,7 @@ def main():
         scored = score_opportunities(symbols, raw_data=daily)
         if scored.empty:
             continue
+        scored = add_barrier_outcome(scored)
         scored["regime"] = regime_by_date.get(date, "sideways")
         scored["score_bin"] = (scored["Fırsat Puanı"].clip(0, 99) // 10 * 10).astype(int)
         eligible = scored[~scored["Hisse"].isin(EXCLUDED_FROM_TOP5)].copy()
@@ -226,7 +246,7 @@ def main():
         "regimes": regime_stats,
         "score_bins": score_bins,
         "calibration_bins": calibration_table,
-        "notes": "3 işlem günü sonrası pozitif kapanış; sıçrama, sonraki 3 günde en az %5 gün içi yükseliş. Test verisi eğitimden ayrıdır.",
+        "notes": "3 işlem günü sonrası pozitif kapanış; işlem başarısı, 3 günde stopa değmeden önce 2R hedefe ulaşmadır. Aynı gün iki bariyer de görülürse kayıp, zaman aşımı başarısız sayılır. Test verisi eğitimden ayrıdır.",
     }
     OUTPUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     write_report(payload)
