@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import requests
 from dotenv import load_dotenv
 
+import config as cfg
 from opportunity_scanner import (
     EXCLUDED_FROM_TOP5,
     _levels_from_raw,
@@ -98,15 +99,7 @@ def news_delivery_mode(now_ny):
     return None
 
 
-IMPORTANT_NEWS_TERMS = {
-    "earnings", "revenue", "guidance", "forecast", "profit warning",
-    "merger", "acquisition", "takeover", "bankruptcy", "chapter 11",
-    "fda", "clinical trial", "sec investigation", "investigation",
-    "lawsuit", "settlement", "recall", "cyberattack", "data breach",
-    "ceo resign", "cfo resign", "offering", "share sale", "buyback",
-    "dividend cut", "dividend increase", "contract award", "halted",
-    "downgrade", "upgrade",
-}
+IMPORTANT_NEWS_TERMS = set(cfg.ONEMLI_KELIMELER)
 
 COMPANY_HEADLINE_ALIASES = {
     "AMD": ("ADVANCED MICRO DEVICES",),
@@ -191,9 +184,9 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
     mode = "ozet_zorunlu" if force else news_delivery_mode(now_ny)
     if mode is None:
         return 0, "Haber gönderim zamanı değil"
-    api_key = os.getenv("FINNHUB_API_KEY")
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    api_key = cfg.finnhub_key()
+    token = cfg.telegram_token()
+    chat_id = cfg.telegram_chat_id()
     if not api_key or not token or not chat_id:
         return 0, "Haber/Telegram bilgileri eksik"
 
@@ -217,7 +210,7 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
                 "https://finnhub.io/api/v1/company-news",
                 params={
                     "symbol": symbol,
-                    "from": (today - timedelta(days=1)).isoformat(),
+                    "from": (today - timedelta(days=cfg.HABER_GERI_GUN)).isoformat(),
                     "to": today.isoformat(),
                     "token": api_key,
                 },
@@ -301,8 +294,8 @@ def send_unusual_alerts(unusual):
     """Önemli düşüşleri aynı gün bir kez, seans sırasında anında gönderir."""
     if unusual is None or unusual.empty:
         return 0
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    token = cfg.telegram_token()
+    chat_id = cfg.telegram_chat_id()
     if not token or not chat_id:
         return 0
 
@@ -321,9 +314,9 @@ def send_unusual_alerts(unusual):
     for _, row in new_rows.iterrows():
         levels = _levels_from_raw(row)
         reasons = []
-        if float(row["Günlük %"]) <= -5:
+        if float(row["Günlük %"]) <= cfg.ONEMLI_DUSUS_ESIGI:
             reasons.append("sert düşüş")
-        if float(row["Hacim Oranı"]) >= 2:
+        if float(row["Hacim Oranı"]) >= cfg.ANORMAL_HACIM_ORANI:
             reasons.append(f"{float(row['Hacim Oranı']):.1f}x hacim")
         lines.extend(
             [
@@ -365,7 +358,7 @@ def fetch_ntsk_context():
         "Haber": "Yeni şirket haberi bulunamadı",
         "Sonraki Bilanço": "—",
     }
-    api_key = os.getenv("FINNHUB_API_KEY")
+    api_key = cfg.finnhub_key()
     headers = {"User-Agent": "BorsaRobotu/1.0 contact@example.com"}
     today = datetime.now(NEW_YORK).date()
 
@@ -450,8 +443,11 @@ def build_scan(watchlist):
     unusual = raw[
         (raw["Hisse"] != "NTSK")
         & (
-            (raw["Günlük %"] <= -5)
-            | ((raw["Hacim Oranı"] >= 2) & (raw["Günlük %"] <= -3))
+            (raw["Günlük %"] <= cfg.ONEMLI_DUSUS_ESIGI)
+            | (
+                (raw["Hacim Oranı"] >= cfg.ANORMAL_HACIM_ORANI)
+                & (raw["Günlük %"] <= cfg.HACIMLI_DUSUS_ESIGI)
+            )
         )
     ].copy()
     if not unusual.empty:

@@ -10,15 +10,16 @@ import streamlit as st
 import yfinance as yf
 from dotenv import load_dotenv
 
+import config as cfg
 from model_calibration import calibrated_lines, load_calibration, regime_summary_line
 
 
 load_dotenv()
 STATE_FILE = Path(__file__).with_name(".opportunity_telegram_state.json")
 EXCLUDED_FROM_TOP5 = {"NTSK"}
-STOP_ATR = 1.50
-TARGET_1_R = 2.0
-TARGET_2_R = 3.0
+STOP_ATR = cfg.STOP_ATR
+TARGET_1_R = cfg.HEDEF1_R
+TARGET_2_R = cfg.HEDEF2_R
 
 
 @st.cache_data(ttl=1800)
@@ -192,6 +193,24 @@ def _rank(series, ascending=True):
     return series.rank(pct=True, ascending=ascending).fillna(0.5) * 100
 
 
+def add_trade_levels(data):
+    """Destek tabanlı alım, stop ve hedef seviyelerini veri tablosuna ekler."""
+    if data.empty:
+        return data.copy()
+    data = data.copy()
+    entry_center = np.maximum(data["20G Destek"], data["Fiyat"] - 0.50 * data["ATR"])
+    data["Alım Alt"] = np.maximum(0.01, entry_center - cfg.GIRIS_BANDI_ATR * data["ATR"])
+    data["Alım Üst"] = entry_center + cfg.GIRIS_BANDI_ATR * data["ATR"]
+    data["Stop"] = np.maximum(0.01, data["Alım Alt"] - STOP_ATR * data["ATR"])
+    # En pahalı giriş olan bandın üstünden bile hedeflerin R/K oranı korunur.
+    worst_entry_risk = data["Alım Üst"] - data["Stop"]
+    data["Hedef 1"] = data["Alım Üst"] + TARGET_1_R * worst_entry_risk
+    data["Hedef 2"] = data["Alım Üst"] + TARGET_2_R * worst_entry_risk
+    numeric = ["Fiyat", "Alım Alt", "Alım Üst", "Stop", "Hedef 1", "Hedef 2"]
+    data[numeric] = data[numeric].round(2)
+    return data
+
+
 def score_opportunities(symbols, raw_data=None):
     data = raw_metrics(symbols) if raw_data is None else raw_data.copy()
     if data.empty:
@@ -200,7 +219,9 @@ def score_opportunities(symbols, raw_data=None):
     liquid = (
         (data["Fiyat"] >= 5)
         & (data["Günlük $ Hacim"] >= 10_000_000)
-        & (data["RSI"].between(35, 78))
+        & (data["RSI"].between(cfg.RSI_MIN, cfg.RSI_MAX))
+        & (data["Hacim Oranı"] >= cfg.MIN_HACIM_ORANI)
+        & (data["SMA50 Fark %"] > 0)
         & (data["Zirveye Uzaklık %"] >= -45)
     )
     data = data[liquid].copy()
@@ -243,17 +264,7 @@ def score_opportunities(symbols, raw_data=None):
     }
     data["Ufuk"] = data[score_columns].idxmax(axis=1).map(labels)
 
-    entry_center = np.maximum(data["20G Destek"], data["Fiyat"] - 0.50 * data["ATR"])
-    data["Alım Alt"] = np.maximum(0.01, entry_center - 0.25 * data["ATR"])
-    data["Alım Üst"] = entry_center + 0.25 * data["ATR"]
-    data["Stop"] = np.maximum(0.01, data["Alım Alt"] - STOP_ATR * data["ATR"])
-    # En pahalı giriş olan bandın üstünden bile hedeflerin R/K oranı korunur.
-    worst_entry_risk = data["Alım Üst"] - data["Stop"]
-    data["Hedef 1"] = data["Alım Üst"] + TARGET_1_R * worst_entry_risk
-    data["Hedef 2"] = data["Alım Üst"] + TARGET_2_R * worst_entry_risk
-
-    numeric = ["Fiyat", "Alım Alt", "Alım Üst", "Stop", "Hedef 1", "Hedef 2"]
-    data[numeric] = data[numeric].round(2)
+    data = add_trade_levels(data)
     return data.sort_values("Fırsat Puanı", ascending=False).reset_index(drop=True)
 
 
@@ -266,8 +277,8 @@ def top5_opportunities(symbols):
 
 def _levels_from_raw(row):
     entry_center = max(float(row["20G Destek"]), float(row["Fiyat"]) - 0.50 * float(row["ATR"]))
-    entry_low = max(0.01, entry_center - 0.25 * float(row["ATR"]))
-    entry_high = entry_center + 0.25 * float(row["ATR"])
+    entry_low = max(0.01, entry_center - cfg.GIRIS_BANDI_ATR * float(row["ATR"]))
+    entry_high = entry_center + cfg.GIRIS_BANDI_ATR * float(row["ATR"])
     stop = max(0.01, entry_low - STOP_ATR * float(row["ATR"]))
     worst_entry_risk = entry_high - stop
     return {
@@ -505,8 +516,11 @@ def render_opportunity_scanner(symbols, ntsk_context=None):
     unusual = raw[
         (raw["Hisse"] != "NTSK")
         & (
-            (raw["Günlük %"] <= -7)
-            | ((raw["Hacim Oranı"] >= 2) & (raw["Günlük %"].abs() >= 3))
+            (raw["Günlük %"] <= cfg.ONEMLI_DUSUS_ESIGI)
+            | (
+                (raw["Hacim Oranı"] >= cfg.ANORMAL_HACIM_ORANI)
+                & (raw["Günlük %"] <= cfg.HACIMLI_DUSUS_ESIGI)
+            )
         )
     ].copy() if not raw.empty else pd.DataFrame()
     if not unusual.empty:

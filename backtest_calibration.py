@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from opportunity_scanner import EXCLUDED_FROM_TOP5, score_opportunities
+import config as cfg
+from opportunity_scanner import EXCLUDED_FROM_TOP5, add_trade_levels, score_opportunities
 from watchlist import BASE_WATCHLIST
 
 
@@ -224,16 +225,24 @@ def main():
         if date < "2020-01-01":
             continue
         scored = score_opportunities(symbols, raw_data=daily)
-        if scored.empty:
-            continue
-        scored = add_barrier_outcome(scored)
-        scored["regime"] = regime_by_date.get(date, "sideways")
-        scored["score_bin"] = (scored["Fırsat Puanı"].clip(0, 99) // 10 * 10).astype(int)
-        eligible = scored[~scored["Hisse"].isin(EXCLUDED_FROM_TOP5)].copy()
-        top = eligible.head(5).copy()
-        signals.append(top)
-        baselines.append(eligible.iloc[5:].copy())
+        top = scored[~scored["Hisse"].isin(EXCLUDED_FROM_TOP5)].head(5).copy()
+        if not top.empty:
+            top = add_barrier_outcome(top)
+            top["regime"] = regime_by_date.get(date, "sideways")
+            top["score_bin"] = (top["Fırsat Puanı"].clip(0, 99) // 10 * 10).astype(int)
+            signals.append(top)
 
+        # Baseline gerçek sinyalsiz evrendir: o gün TOP 5 sinyali almayan tüm hisseler.
+        baseline = daily[
+            ~daily["Hisse"].isin(set(top["Hisse"]) | EXCLUDED_FROM_TOP5)
+        ].copy()
+        if not baseline.empty:
+            baseline = add_barrier_outcome(add_trade_levels(baseline))
+            baseline["regime"] = regime_by_date.get(date, "sideways")
+            baselines.append(baseline)
+
+    if not signals or not baselines:
+        raise RuntimeError("Sinyal veya sinyalsiz karşılaştırma örneği üretilemedi; mevcut rapor korunuyor.")
     signal_data = pd.concat(signals, ignore_index=True)
     baseline_data = pd.concat(baselines, ignore_index=True)
     train = signal_data[signal_data["Veri Tarihi"] <= TRAIN_END].copy()
@@ -280,6 +289,7 @@ def main():
 
     payload = {
         "method_version": 1,
+        "strategy_version": cfg.STRATEGY_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "training_period": "2020-01-01..2024-12-31",
         "test_period": f"2025-01-01..{datetime.now(timezone.utc).date().isoformat()}",

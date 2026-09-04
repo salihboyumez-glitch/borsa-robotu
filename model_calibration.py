@@ -1,15 +1,18 @@
 import json
 from pathlib import Path
 
+import config as cfg
 
 CALIBRATION_FILE = Path(__file__).with_name("model_calibration.json")
-MIN_SAMPLE_SIZE = 30
+MIN_SAMPLE_SIZE = cfg.MIN_ORNEK
 
 
 def load_calibration():
     try:
         payload = json.loads(CALIBRATION_FILE.read_text(encoding="utf-8"))
-        return payload if payload.get("method_version") == 1 else {}
+        valid_method = payload.get("method_version") == 1
+        valid_strategy = payload.get("strategy_version") == cfg.STRATEGY_VERSION
+        return payload if valid_method and valid_strategy else {}
     except Exception:
         return {}
 
