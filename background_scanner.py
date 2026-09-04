@@ -620,7 +620,8 @@ def main():
         if args.dry_run:
             print("Kuru çalıştırma: hareketler Telegram'a gönderilmedi")
             return 0
-        count = send_price_movement_alerts(BASE_WATCHLIST)
+        movement_watchlist = list(dict.fromkeys(BASE_WATCHLIST + TRADINGVIEW_SHARED_WATCHLIST))
+        count = send_price_movement_alerts(movement_watchlist)
         print(f"{datetime.now().isoformat()} — fiyat hareketi taraması — sent={count}")
         return 0
     if args.komut in ("haber", "hepsi"):
