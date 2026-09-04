@@ -1,11 +1,8 @@
 name: Borsa Robotu 7/24
 
 on:
-  schedule:
-    # Hafta içi mevcut 15 dakikalık piyasa akışının dışında çalışır.
-    - cron: "19,49 0-12,22-23 * * 1-5"
-    # Hafta sonu haberleri için tüm gün çalışır.
-    - cron: "19,49 * * * 0,6"
+  # Tekrarlı ve gereksiz haber akışını önlemek için otomatik zamanlama
+  # market-scanner.yml altında tek merkezden yönetilir.
   workflow_dispatch:
 
 permissions:
