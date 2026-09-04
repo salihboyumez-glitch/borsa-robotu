@@ -16,6 +16,9 @@ from model_calibration import calibrated_lines, load_calibration, regime_summary
 load_dotenv()
 STATE_FILE = Path(__file__).with_name(".opportunity_telegram_state.json")
 EXCLUDED_FROM_TOP5 = {"NTSK"}
+STOP_ATR = 1.50
+TARGET_1_R = 2.0
+TARGET_2_R = 3.0
 
 
 @st.cache_data(ttl=1800)
@@ -243,10 +246,11 @@ def score_opportunities(symbols, raw_data=None):
     entry_center = np.maximum(data["20G Destek"], data["Fiyat"] - 0.50 * data["ATR"])
     data["Alım Alt"] = np.maximum(0.01, entry_center - 0.25 * data["ATR"])
     data["Alım Üst"] = entry_center + 0.25 * data["ATR"]
-    data["Stop"] = np.maximum(0.01, data["Alım Alt"] - 1.50 * data["ATR"])
-    risk = ((data["Alım Alt"] + data["Alım Üst"]) / 2) - data["Stop"]
-    data["Hedef 1"] = ((data["Alım Alt"] + data["Alım Üst"]) / 2) + 2 * risk
-    data["Hedef 2"] = ((data["Alım Alt"] + data["Alım Üst"]) / 2) + 3 * risk
+    data["Stop"] = np.maximum(0.01, data["Alım Alt"] - STOP_ATR * data["ATR"])
+    # En pahalı giriş olan bandın üstünden bile hedeflerin R/K oranı korunur.
+    worst_entry_risk = data["Alım Üst"] - data["Stop"]
+    data["Hedef 1"] = data["Alım Üst"] + TARGET_1_R * worst_entry_risk
+    data["Hedef 2"] = data["Alım Üst"] + TARGET_2_R * worst_entry_risk
 
     numeric = ["Fiyat", "Alım Alt", "Alım Üst", "Stop", "Hedef 1", "Hedef 2"]
     data[numeric] = data[numeric].round(2)
@@ -264,14 +268,14 @@ def _levels_from_raw(row):
     entry_center = max(float(row["20G Destek"]), float(row["Fiyat"]) - 0.50 * float(row["ATR"]))
     entry_low = max(0.01, entry_center - 0.25 * float(row["ATR"]))
     entry_high = entry_center + 0.25 * float(row["ATR"])
-    stop = max(0.01, entry_low - 1.50 * float(row["ATR"]))
-    risk = (entry_low + entry_high) / 2 - stop
+    stop = max(0.01, entry_low - STOP_ATR * float(row["ATR"]))
+    worst_entry_risk = entry_high - stop
     return {
         "Alım Alt": round(entry_low, 2),
         "Alım Üst": round(entry_high, 2),
         "Stop": round(stop, 2),
-        "Hedef 1": round((entry_low + entry_high) / 2 + 2 * risk, 2),
-        "Hedef 2": round((entry_low + entry_high) / 2 + 3 * risk, 2),
+        "Hedef 1": round(entry_high + TARGET_1_R * worst_entry_risk, 2),
+        "Hedef 2": round(entry_high + TARGET_2_R * worst_entry_risk, 2),
     }
 
 
