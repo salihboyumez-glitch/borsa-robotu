@@ -29,6 +29,7 @@ LOCK_FILE = PROJECT_DIR / ".background_scanner.lock"
 UNUSUAL_STATE_FILE = PROJECT_DIR / ".unusual_telegram_state.json"
 NEWS_STATE_FILE = PROJECT_DIR / ".news_telegram_state.json"
 NEW_YORK = ZoneInfo("America/New_York")
+ISTANBUL = ZoneInfo("Europe/Istanbul")
 PAYWALLED_NEWS_DOMAINS = {
     "seekingalpha.com",
     "www.seekingalpha.com",
@@ -63,17 +64,55 @@ def release_lock():
 def should_run(now_ny, force=False):
     if force:
         return True
-    # Hafta içi ABD normal seansı: açılıştan birkaç dakika sonra başlayıp kapanışa kadar.
+    # Açılış öncesi analizden kapanış analizine kadar fiyat taraması yapılır.
     minutes = now_ny.hour * 60 + now_ny.minute
-    return now_ny.weekday() < 5 and (9 * 60 + 35) <= minutes <= (16 * 60 + 15)
+    return now_ny.weekday() < 5 and (8 * 60 + 25) <= minutes <= (16 * 60 + 15)
 
 
 def delivery_slot(now_ny):
-    """Piyasa açıkken TOP 5 analizini saatte bir kez göndermek için anahtar üretir."""
+    """TOP 5 analizini açılıştan 1 saat önce, seans ortasında ve kapanışta gönderir."""
     minutes = now_ny.hour * 60 + now_ny.minute
-    if (9 * 60 + 35) <= minutes <= (16 * 60 + 15):
-        return f"saat_{now_ny:%H}"
+    if (8 * 60 + 25) <= minutes < (8 * 60 + 50):
+        return "acilistan_1_saat_once"
+    if (12 * 60 + 40) <= minutes < (13 * 60 + 10):
+        return "seans_ortasi"
+    if (15 * 60 + 55) <= minutes <= (16 * 60 + 15):
+        return "seans_kapanisi"
     return None
+
+
+def news_delivery_mode(now_ny):
+    """Normal haberleri iki özette, önemli haberleri yalnız seans içinde anlık yollar."""
+    if now_ny.weekday() >= 5:
+        return None
+    ny_minutes = now_ny.hour * 60 + now_ny.minute
+    now_tr = now_ny.astimezone(ISTANBUL)
+    tr_minutes = now_tr.hour * 60 + now_tr.minute
+    if (15 * 60 + 25) <= tr_minutes < (15 * 60 + 45):
+        return "ozet_1530"
+    if (15 * 60 + 55) <= ny_minutes <= (16 * 60 + 15):
+        return "ozet_kapanis"
+    if (9 * 60 + 30) <= ny_minutes < (16 * 60):
+        return "onemli_anlik"
+    return None
+
+
+IMPORTANT_NEWS_TERMS = {
+    "earnings", "revenue", "guidance", "forecast", "profit warning",
+    "merger", "acquisition", "takeover", "bankruptcy", "chapter 11",
+    "fda", "clinical trial", "sec investigation", "investigation",
+    "lawsuit", "settlement", "recall", "cyberattack", "data breach",
+    "ceo resign", "cfo resign", "offering", "share sale", "buyback",
+    "dividend cut", "dividend increase", "contract award", "halted",
+    "downgrade", "upgrade",
+}
+
+
+def _is_important_news(article):
+    text = " ".join(
+        str(article.get(key, "")) for key in ("headline", "summary", "category")
+    ).casefold()
+    return any(term in text for term in IMPORTANT_NEWS_TERMS)
 
 
 def _news_id(symbol, article):
@@ -99,8 +138,12 @@ def _is_paywalled_news(article):
     )
 
 
-def send_new_news_alerts(symbols):
-    """Piyasa saatinden bağımsız olarak yalnızca yeni Finnhub haberlerini gönderir."""
+def send_new_news_alerts(symbols, now_ny=None, force=False):
+    """Normal haberleri planlı özetlerde, önemli haberleri seans içinde anlık gönderir."""
+    now_ny = now_ny or datetime.now(NEW_YORK)
+    mode = "ozet_zorunlu" if force else news_delivery_mode(now_ny)
+    if mode is None:
+        return 0, "Haber gönderim zamanı değil"
     api_key = os.getenv("FINNHUB_API_KEY")
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -157,6 +200,8 @@ def send_new_news_alerts(symbols):
         return 0, f"Haber radarı başlatıldı; {len(initial)} mevcut haber başlangıç kabul edildi"
 
     collected.sort(key=lambda item: item[0])
+    if mode == "onemli_anlik":
+        collected = [item for item in collected if _is_important_news(item[3])]
     delivered = []
     # Tek mesajı Telegram sınırının altında tut; kalanlar sonraki kontrolde gönderilir.
     for timestamp, symbol, article_id, article in collected[:8]:
@@ -164,9 +209,10 @@ def send_new_news_alerts(symbols):
         source = str(article.get("source", "Kaynak belirtilmedi")).strip()
         url = str(article.get("url", "")).strip()
         news_time = datetime.fromtimestamp(timestamp, NEW_YORK).strftime("%Y-%m-%d %H:%M ET") if timestamp else "Saat bilinmiyor"
+        label = "🚨 ÖNEMLİ SEANS HABERİ" if mode == "onemli_anlik" else "📰 PLANLI HABER ÖZETİ"
         message = "\n".join(
             [
-                f"📰 YENİ HABER — {symbol}",
+                f"{label} — {symbol}",
                 headline[:500],
                 f"🕒 {news_time}",
                 f"Kaynak: {source[:100]}",
@@ -196,7 +242,7 @@ def send_new_news_alerts(symbols):
 
 
 def send_unusual_alerts(unusual):
-    """Yeni olağan dışı hisseleri aynı gün bir kez, tarama anında gönderir."""
+    """Önemli düşüşleri aynı gün bir kez, seans sırasında anında gönderir."""
     if unusual is None or unusual.empty:
         return 0
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -214,13 +260,13 @@ def send_unusual_alerts(unusual):
     if new_rows.empty:
         return 0
 
-    lines = ["⚡ OLAĞAN DIŞI HAREKET — CANLI RADAR", f"🕒 {datetime.now(NEW_YORK):%Y-%m-%d %H:%M ET}", ""]
+    lines = ["🔻 ÖNEMLİ DÜŞÜŞ — CANLI RADAR", f"🕒 {datetime.now(NEW_YORK):%Y-%m-%d %H:%M ET}", ""]
     delivered = []
     for _, row in new_rows.iterrows():
         levels = _levels_from_raw(row)
         reasons = []
-        if float(row["Günlük %"]) <= -7:
-            reasons.append("olağan dışı indirim")
+        if float(row["Günlük %"]) <= -5:
+            reasons.append("sert düşüş")
         if float(row["Hacim Oranı"]) >= 2:
             reasons.append(f"{float(row['Hacim Oranı']):.1f}x hacim")
         lines.extend(
@@ -233,7 +279,7 @@ def send_unusual_alerts(unusual):
             ]
         )
         delivered.append(str(row["Hisse"]))
-    lines.append("⚠️ Sert düşüş tek başına alım sinyali değildir; haber ve risk kapıları kontrol edilmelidir.")
+    lines.append("⚠️ Düşüş tek başına alım sinyali değildir; haber ve risk kapıları kontrol edilmelidir.")
     response = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         data={"chat_id": chat_id, "text": "\n".join(lines)},
@@ -348,8 +394,8 @@ def build_scan(watchlist):
     unusual = raw[
         (raw["Hisse"] != "NTSK")
         & (
-            (raw["Günlük %"] <= -7)
-            | ((raw["Hacim Oranı"] >= 2) & (raw["Günlük %"].abs() >= 3))
+            (raw["Günlük %"] <= -5)
+            | ((raw["Hacim Oranı"] >= 2) & (raw["Günlük %"] <= -3))
         )
     ].copy()
     if not unusual.empty:
@@ -365,7 +411,7 @@ def main():
     args = parser.parse_args()
     now_ny = datetime.now(NEW_YORK)
     try:
-        news_count, news_status = send_new_news_alerts(BASE_WATCHLIST)
+        news_count, news_status = send_new_news_alerts(BASE_WATCHLIST, now_ny=now_ny, force=args.force)
         print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
     except Exception as exc:
         print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
