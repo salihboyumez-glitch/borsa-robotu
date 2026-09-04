@@ -2,7 +2,9 @@ name: ABD Piyasa Firsat Taramasi
 
 on:
   schedule:
-    - cron: "*/15 13-21 * * 1-5"
+    # Türkiye 15:30 haber özeti, ABD açılış öncesi/seans/kapanış taramaları.
+    # New York yaz/kış saati kod içinde otomatik hesaplanır.
+    - cron: "*/15 12-22 * * 1-5"
   workflow_dispatch:
 
 permissions:
