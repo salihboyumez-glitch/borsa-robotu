@@ -24,6 +24,7 @@ from opportunity_scanner import (
     score_opportunities,
 )
 from price_movement_alerts import mark_sent, movement_message, scan_movements
+from stocktwits_social import sosyal_satirlar
 from tradingview_sync import sync_shared_watchlist
 from watchlist import BASE_WATCHLIST, TRADINGVIEW_SHARED_WATCHLIST
 
@@ -530,11 +531,15 @@ def send_price_movement_alerts(symbols):
     alerts, state = scan_movements(symbols)
     delivered = 0
     for alert in alerts:
+        message = movement_message(alert)
+        social_lines = sosyal_satirlar(alert["symbol"])
+        if social_lines:
+            message += "\n" + "\n".join(social_lines)
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data={
                 "chat_id": chat_id,
-                "text": movement_message(alert),
+                "text": message,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": True,
             },

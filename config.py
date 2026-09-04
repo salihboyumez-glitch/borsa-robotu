@@ -48,6 +48,11 @@ ONEMLI_KELIMELER = (
 )
 HABER_GERI_GUN = 2
 
+# Stocktwits yalnız sosyal ilgi bağlamıdır; sinyal ve seviye hesabına girmez.
+STOCKTWITS_AKTIF = True
+STOCKTWITS_TRAFIK_ESIGI = 2.0
+STOCKTWITS_MIN_ETIKET = 5
+
 # Gizli anahtarlar yalnız ortam değişkenlerinden okunur.
 def finnhub_key():
     return os.getenv("FINNHUB_API_KEY", os.getenv("FINNHUB_KEY", ""))
