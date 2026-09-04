@@ -34,6 +34,17 @@ class NewsRelevanceTests(unittest.TestCase):
         article = {"headline": "IBM announces new enterprise AI products", "related": "IBM"}
         self.assertTrue(scanner._news_is_relevant("IBM", article))
 
+    def test_stocktwits_trends_are_limited_to_watchlist(self):
+        payload = {"symbols": [
+            {"symbol": "IBM", "trending_score": 3, "trends": {"summary": "IBM trend", "summary_at": "now"}},
+            {"symbol": "OTHER", "trends": {"summary": "Other trend"}},
+        ]}
+        self.assertEqual([item["symbol"] for item in scanner._stocktwits_trends(payload, ["IBM"])], ["IBM"])
+
+    def test_stocktwits_item_without_summary_is_ignored(self):
+        self.assertEqual(scanner._stocktwits_trends(
+            {"symbols": [{"symbol": "IBM", "trends": None}]}, ["IBM"]), [])
+
 
 class TranslationTests(unittest.TestCase):
     @patch.object(scanner.requests, "get")

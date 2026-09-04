@@ -33,6 +33,7 @@ LOCK_FILE = PROJECT_DIR / ".background_scanner.lock"
 UNUSUAL_STATE_FILE = PROJECT_DIR / ".unusual_telegram_state.json"
 NEWS_STATE_FILE = PROJECT_DIR / ".news_telegram_state.json"
 TRANSLATION_CACHE_FILE = PROJECT_DIR / ".news_translation_cache.json"
+STOCKTWITS_STATE_FILE = PROJECT_DIR / ".stocktwits_state.json"
 NEW_YORK = ZoneInfo("America/New_York")
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 PAYWALLED_NEWS_DOMAINS = {
@@ -409,6 +410,62 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
     )
 
 
+def _stocktwits_trends(payload, watchlist):
+    """Trend yanıtını yalnız takip listesindeki doğrulanmış sembollere indirger."""
+    followed = {str(symbol).upper() for symbol in watchlist}
+    results = []
+    for item in payload.get("symbols", []) if isinstance(payload, dict) else []:
+        symbol = str(item.get("symbol", "")).upper().strip()
+        trends = item.get("trends") or {}
+        summary = str(trends.get("summary", "")).strip()
+        if symbol in followed and summary:
+            results.append({"symbol": symbol, "summary": summary,
+                            "summary_at": str(trends.get("summary_at", "")),
+                            "score": float(item.get("trending_score", 0) or 0)})
+    return results
+
+
+def send_stocktwits_alerts(watchlist):
+    """Yeni Stocktwits trendlerini doğrulanmış haberden ayrı sosyal sinyal olarak yollar."""
+    token, chat_id = cfg.telegram_token(), cfg.telegram_chat_id()
+    if not token or not chat_id:
+        return 0
+    try:
+        state = json.loads(STOCKTWITS_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    seen = set(state.get("seen", []))
+    response = requests.get("https://api.stocktwits.com/api/2/trending/symbols.json",
+                            headers={"User-Agent": "borsa-robotu/1.0"}, timeout=20)
+    response.raise_for_status()
+    delivered = []
+    for trend in _stocktwits_trends(response.json(), watchlist)[:5]:
+        trend_id = f"{trend['symbol']}|{trend['summary_at']}|{trend['summary']}"
+        if trend_id in seen:
+            continue
+        translated = translate_news_to_turkish(trend["summary"])
+        if not translated:
+            continue
+        message = "\n".join([
+            f"💬 STOCKTWITS SOSYAL SİNYALİ — {trend['symbol']}",
+            f"🇹🇷 {translated[:900]}", f"Trend skoru: {trend['score']:.2f}",
+            f"https://stocktwits.com/symbol/{trend['symbol']}",
+            "ℹ️ Bu içerik doğrulanmış haber değil, yatırımcı topluluğu eğilimidir.",
+            "⚠️ Yatırım tavsiyesi değildir.",
+        ])
+        telegram = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                                 data={"chat_id": chat_id, "text": message,
+                                       "disable_web_page_preview": True}, timeout=20)
+        telegram.raise_for_status()
+        delivered.append(trend_id)
+    if delivered:
+        seen.update(delivered)
+        STOCKTWITS_STATE_FILE.write_text(
+            json.dumps({"seen": sorted(seen)[-1000:], "updated_at": datetime.now().isoformat()},
+                       ensure_ascii=False), encoding="utf-8")
+    return len(delivered)
+
+
 def send_unusual_alerts(unusual):
     """Önemli düşüşleri aynı gün bir kez, seans sırasında anında gönderir."""
     if unusual is None or unusual.empty:
@@ -633,6 +690,11 @@ def main():
                 print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
             except Exception as exc:
                 print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
+            try:
+                count = send_stocktwits_alerts(full_watchlist)
+                print(f"{datetime.now().isoformat()} — Stocktwits sosyal sinyali — sent={count}")
+            except Exception as exc:
+                print(f"Stocktwits taraması hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
     if args.komut == "haber":
         return 0
     if not should_run(now_ny, force=args.force):
