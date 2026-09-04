@@ -1,4 +1,5 @@
 import argparse
+import html
 import json
 import os
 import re
@@ -30,6 +31,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 LOCK_FILE = PROJECT_DIR / ".background_scanner.lock"
 UNUSUAL_STATE_FILE = PROJECT_DIR / ".unusual_telegram_state.json"
 NEWS_STATE_FILE = PROJECT_DIR / ".news_telegram_state.json"
+TRANSLATION_CACHE_FILE = PROJECT_DIR / ".news_translation_cache.json"
 NEW_YORK = ZoneInfo("America/New_York")
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 PAYWALLED_NEWS_DOMAINS = {
@@ -111,7 +113,45 @@ COMPANY_HEADLINE_ALIASES = {
     "MSFT": ("MICROSOFT",),
     "NVDA": ("NVIDIA",),
     "TSLA": ("TESLA",),
+    "BA": ("BOEING",),
+    "IBM": ("INTERNATIONAL BUSINESS MACHINES",),
+    "WMT": ("WALMART",),
 }
+
+
+def translate_news_to_turkish(text):
+    """Başlığı Türkçeye çevir; çeviri yoksa İngilizce alarm üretme."""
+    original = html.unescape(str(text or "").strip())
+    if not original:
+        return "Yeni haber"
+    try:
+        cache = json.loads(TRANSLATION_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        cache = {}
+    cached = str(cache.get(original, "")).strip()
+    if cached:
+        return cached
+    try:
+        response = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "en", "tl": "tr", "dt": "t", "q": original},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        translated = "".join(part[0] for part in payload[0] if part and part[0]).strip()
+        if not translated or translated.casefold() == original.casefold():
+            return None
+        cache[original] = translated
+        cache = dict(list(cache.items())[-1000:])
+        temporary = TRANSLATION_CACHE_FILE.with_suffix(".tmp")
+        temporary.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(TRANSLATION_CACHE_FILE)
+        return translated
+    except Exception as exc:
+        print(f"Haber çevirisi başarısız: {type(exc).__name__}", file=sys.stderr)
+        return None
 
 
 def _is_important_news(article):
@@ -154,10 +194,15 @@ def _news_is_relevant(symbol, article):
         if item.strip()
     }
     headline = str(article.get("headline", "")).upper()
+    explicit_tickers = {
+        match.group(1)
+        for match in re.finditer(r"\((?:NASDAQ:|NYSE:)?\s*\$?([A-Z]{1,5})\)", headline)
+    }
+    # Başlıktaki açık ticker, sağlayıcının hatalı `related` alanından üstündür.
+    if explicit_tickers:
+        return symbol in explicit_tickers
     if related and symbol not in related:
         return False
-    if related == {symbol}:
-        return True
     ticker_in_headline = len(symbol) > 1 and re.search(
         rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])", headline
     )
@@ -253,6 +298,9 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
     # Tek mesajı Telegram sınırının altında tut; kalanlar sonraki kontrolde gönderilir.
     for timestamp, symbol, article_id, article in collected[:8]:
         headline = str(article.get("headline", "Yeni haber")).strip()
+        turkish_headline = translate_news_to_turkish(headline)
+        if not turkish_headline:
+            continue
         source = str(article.get("source", "Kaynak belirtilmedi")).strip()
         url = str(article.get("url", "")).strip()
         news_time = datetime.fromtimestamp(timestamp, NEW_YORK).strftime("%Y-%m-%d %H:%M ET") if timestamp else "Saat bilinmiyor"
@@ -260,7 +308,7 @@ def send_new_news_alerts(symbols, now_ny=None, force=False):
         message = "\n".join(
             [
                 f"{label} — {symbol}",
-                headline[:500],
+                f"🇹🇷 {turkish_headline[:500]}",
                 f"🕒 {news_time}",
                 f"Kaynak: {source[:100]}",
                 url,
