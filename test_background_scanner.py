@@ -49,6 +49,30 @@ class TranslationTests(unittest.TestCase):
         ):
             self.assertIsNone(scanner.translate_news_to_turkish("English headline"))
 
+    def test_finance_terms_are_normalized(self):
+        self.assertEqual(
+            scanner._fix_finance_terms("Paylar düştü, rehberlik güncellendi"),
+            "hisseler düştü, beklenti güncellendi",
+        )
+
+    @patch.dict(
+        "os.environ",
+        {"ANTHROPIC_API_KEY": "secret", "NEWS_TRANSLATION_PROVIDER": "anthropic"},
+        clear=False,
+    )
+    @patch.object(scanner.requests, "post")
+    def test_claude_is_used_only_when_explicitly_enabled(self, post):
+        response = Mock()
+        response.json.return_value = {
+            "content": [{"type": "text", "text": "Şirket beklentisini yükseltti"}]
+        }
+        post.return_value = response
+
+        self.assertEqual(
+            scanner._translate_with_claude("Company raises guidance"),
+            "Şirket beklentisini yükseltti",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

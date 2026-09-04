@@ -118,9 +118,85 @@ COMPANY_HEADLINE_ALIASES = {
     "WMT": ("WALMART",),
 }
 
+FINANCE_TRANSLATION_REPLACEMENTS = {
+    "paylar": "hisseler",
+    "pay senedi": "hisse",
+    "stok fiyatı": "hisse fiyatı",
+    "stok": "hisse",
+    "kazanç raporu": "bilanço",
+    "kazanç çağrısı": "bilanço toplantısı",
+    "rehberlik": "beklenti",
+    "yönlendirme": "beklenti",
+    "notu düşürdü": "tavsiyesini düşürdü",
+    "notu yükseltti": "tavsiyesini yükseltti",
+    "geri alım": "hisse geri alımı",
+}
+
+
+def _fix_finance_terms(text):
+    """Makine çevirisindeki yaygın finans terimi hatalarını düzeltir."""
+    result = str(text or "")
+    for wrong, correct in FINANCE_TRANSLATION_REPLACEMENTS.items():
+        result = re.sub(rf"\b{re.escape(wrong)}\b", correct, result, flags=re.IGNORECASE)
+    return result
+
+
+def _translate_with_claude(text):
+    """Anahtar ve açık tercih varsa Claude ile finans odaklı çeviri yapar."""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key or os.getenv("NEWS_TRANSLATION_PROVIDER", "").casefold() != "anthropic":
+        return None
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": os.getenv("ANTHROPIC_TRANSLATION_MODEL", "claude-haiku-4-5-20251001"),
+                "max_tokens": 300,
+                "system": (
+                    "Verilen İngilizce borsa haberi başlığını doğal Türkçeye çevir. "
+                    "Finans terimlerini doğru kullan; şirket adlarını ve hisse sembollerini "
+                    "değiştirme. Yalnızca çeviriyi yaz."
+                ),
+                "messages": [{"role": "user", "content": text}],
+            },
+            timeout=25,
+        )
+        response.raise_for_status()
+        parts = response.json().get("content", [])
+        translated = "".join(
+            part.get("text", "") for part in parts if part.get("type") == "text"
+        ).strip()
+        return _fix_finance_terms(translated) or None
+    except Exception as exc:
+        print(f"Claude çevirisi başarısız: {type(exc).__name__}", file=sys.stderr)
+        return None
+
+
+def _translate_with_google(text):
+    """Anahtar gerektirmeyen Google çeviri ucunu kullanır."""
+    try:
+        response = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "en", "tl": "tr", "dt": "t", "q": text},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        translated = "".join(part[0] for part in payload[0] if part and part[0]).strip()
+        return _fix_finance_terms(translated) or None
+    except Exception as exc:
+        print(f"Google çevirisi başarısız: {type(exc).__name__}", file=sys.stderr)
+        return None
+
 
 def translate_news_to_turkish(text):
-    """Başlığı Türkçeye çevir; çeviri yoksa İngilizce alarm üretme."""
+    """Önce isteğe bağlı Claude, sonra ücretsiz Google ile Türkçeye çevirir."""
     original = html.unescape(str(text or "").strip())
     if not original:
         return "Yeni haber"
@@ -131,27 +207,21 @@ def translate_news_to_turkish(text):
     cached = str(cache.get(original, "")).strip()
     if cached:
         return cached
-    try:
-        response = requests.get(
-            "https://translate.googleapis.com/translate_a/single",
-            params={"client": "gtx", "sl": "en", "tl": "tr", "dt": "t", "q": original},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=12,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        translated = "".join(part[0] for part in payload[0] if part and part[0]).strip()
+    for translator in (_translate_with_claude, _translate_with_google):
+        translated = translator(original)
         if not translated or translated.casefold() == original.casefold():
-            return None
+            continue
         cache[original] = translated
         cache = dict(list(cache.items())[-1000:])
-        temporary = TRANSLATION_CACHE_FILE.with_suffix(".tmp")
-        temporary.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-        temporary.replace(TRANSLATION_CACHE_FILE)
+        try:
+            temporary = TRANSLATION_CACHE_FILE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(TRANSLATION_CACHE_FILE)
+        except Exception as exc:
+            print(f"Çeviri önbelleği yazılamadı: {type(exc).__name__}", file=sys.stderr)
         return translated
-    except Exception as exc:
-        print(f"Haber çevirisi başarısız: {type(exc).__name__}", file=sys.stderr)
-        return None
+    # İngilizce alarm göndermek yerine sonraki taramada yeniden denenecek.
+    return None
 
 
 def _is_important_news(article):
