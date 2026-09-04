@@ -9,6 +9,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backtest_calibration import add_barrier_outcome, symbol_history
+import config as cfg
 from model_calibration import calibrated_lines, regime_summary_line
 from opportunity_scanner import TARGET_1_R, _levels_from_raw, score_opportunities
 
@@ -58,6 +59,9 @@ def test_scored_rows_have_valid_trade_order():
     assert (scored["Alım Alt"] < scored["Alım Üst"]).all()
     assert (scored["Alım Üst"] < scored["Hedef 1"]).all()
     assert (scored["Hedef 1"] < scored["Hedef 2"]).all()
+    assert scored["RSI"].between(cfg.RSI_MIN, cfg.RSI_MAX).all()
+    assert (scored["Hacim Oranı"] >= cfg.MIN_HACIM_ORANI).all()
+    assert (scored["SMA50 Fark %"] > 0).all()
 
 
 def test_calibration_message_contains_context_and_sample_size():
