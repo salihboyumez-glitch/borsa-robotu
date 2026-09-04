@@ -406,15 +406,28 @@ def build_scan(watchlist):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "komut",
+        nargs="?",
+        default="hepsi",
+        choices=("hepsi", "tarama", "haber", "hareket"),
+        help="Çalıştırılacak bölüm (varsayılan: hepsi)",
+    )
     parser.add_argument("--force", action="store_true", help="Saat kontrolünü atla")
     parser.add_argument("--dry-run", action="store_true", help="Telegram'a göndermeden test et")
     args = parser.parse_args()
     now_ny = datetime.now(NEW_YORK)
-    try:
-        news_count, news_status = send_new_news_alerts(BASE_WATCHLIST, now_ny=now_ny, force=args.force)
-        print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
-    except Exception as exc:
-        print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if args.komut in ("haber", "hepsi"):
+        if args.dry_run:
+            print("Kuru çalıştırma: haberler Telegram'a gönderilmedi")
+        else:
+            try:
+                news_count, news_status = send_new_news_alerts(BASE_WATCHLIST, now_ny=now_ny, force=args.force)
+                print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
+            except Exception as exc:
+                print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if args.komut == "haber":
+        return 0
     if not should_run(now_ny, force=args.force):
         print(f"{now_ny.isoformat()} — piyasa sonrası çalışma penceresi bekleniyor")
         return 0
@@ -435,7 +448,7 @@ def main():
             print(f"Güncel seans verisi yok: son veri {latest_date}")
             return 0
         context = fetch_ntsk_context()
-        if args.dry_run:
+        if args.dry_run and args.komut in ("tarama", "hepsi"):
             print(
                 _telegram_message(
                     top5,
@@ -446,7 +459,16 @@ def main():
                 )
             )
             return 0
-        unusual_count = send_unusual_alerts(unusual)
+        if args.dry_run and args.komut == "hareket":
+            if unusual.empty:
+                print("Olağan dışı hareket bulunmadı")
+            else:
+                print(unusual[["Hisse", "Fiyat", "Günlük %", "Hacim Oranı"]].to_string(index=False))
+            return 0
+        unusual_count = send_unusual_alerts(unusual) if args.komut in ("hareket", "hepsi") else 0
+        if args.komut == "hareket":
+            print(f"{datetime.now().isoformat()} — hareket taraması — new_unusual={unusual_count}")
+            return 0
         slot = delivery_slot(now_ny)
         if slot or args.force:
             sent, status = auto_send_top5(
