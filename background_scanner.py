@@ -613,6 +613,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Telegram'a göndermeden test et")
     args = parser.parse_args()
     now_ny = datetime.now(NEW_YORK)
+    full_watchlist = list(dict.fromkeys(BASE_WATCHLIST + TRADINGVIEW_SHARED_WATCHLIST))
     if args.komut == "hareket":
         if not should_run(now_ny, force=args.force):
             print(f"{now_ny.isoformat()} — hareket taraması piyasa penceresini bekliyor")
@@ -620,8 +621,7 @@ def main():
         if args.dry_run:
             print("Kuru çalıştırma: hareketler Telegram'a gönderilmedi")
             return 0
-        movement_watchlist = list(dict.fromkeys(BASE_WATCHLIST + TRADINGVIEW_SHARED_WATCHLIST))
-        count = send_price_movement_alerts(movement_watchlist)
+        count = send_price_movement_alerts(full_watchlist)
         print(f"{datetime.now().isoformat()} — fiyat hareketi taraması — sent={count}")
         return 0
     if args.komut in ("haber", "hepsi"):
@@ -629,7 +629,7 @@ def main():
             print("Kuru çalıştırma: haberler Telegram'a gönderilmedi")
         else:
             try:
-                news_count, news_status = send_new_news_alerts(BASE_WATCHLIST, now_ny=now_ny, force=args.force)
+                news_count, news_status = send_new_news_alerts(full_watchlist, now_ny=now_ny, force=args.force)
                 print(f"{datetime.now().isoformat()} — {news_status} — news_sent={news_count}")
             except Exception as exc:
                 print(f"Haber bildirimi hatası: {type(exc).__name__}: {exc}", file=sys.stderr)
