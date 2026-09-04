@@ -10,6 +10,8 @@ import streamlit as st
 import yfinance as yf
 from dotenv import load_dotenv
 
+from model_calibration import calibrated_lines, load_calibration, regime_summary_line
+
 
 load_dotenv()
 STATE_FILE = Path(__file__).with_name(".opportunity_telegram_state.json")
@@ -285,26 +287,6 @@ def _entry_status(row):
     return "⏳ ALIM BÖLGESİ ÜSTÜNDE — fiyat kovalanmamalı"
 
 
-def _model_probabilities(row):
-    """Teknik göstergeleri garanti içermeyen, sınırlı model olasılıklarına çevirir."""
-    score = float(row.get("Fırsat Puanı", 50))
-    rsi = float(row.get("RSI", 50))
-    volume_ratio = float(row.get("Hacim Oranı", 1))
-    daily = float(row.get("Günlük %", 0))
-    sma20 = float(row.get("SMA20 Fark %", 0))
-    trend = max(-10, min(10, sma20))
-
-    rise = 30 + score * 0.45 + trend * 0.8
-    rise += max(0, 65 - rsi) * 0.10
-    rise -= max(0, rsi - 72) * 1.2
-
-    jump = 20 + score * 0.35 + max(0, volume_ratio - 1) * 12
-    jump += max(0, daily) * 1.5 + max(0, trend) * 0.7
-    jump -= max(0, rsi - 75) * 1.5
-
-    return int(round(np.clip(rise, 15, 88))), int(round(np.clip(jump, 10, 85)))
-
-
 def _telegram_message(top5, scanned_count, ntsk_row=None, ntsk_context=None, unusual=None):
     lines = [
         f"📌 NTSK SABİT TAKİP + {scanned_count} HİSSE FIRSAT RADARI",
@@ -331,9 +313,9 @@ def _telegram_message(top5, scanned_count, ntsk_row=None, ntsk_context=None, unu
     else:
         lines.extend(["⭐ NTSK: fiyat verisi alınamadı; sabit takip devam ediyor.", ""])
 
+    calibration = load_calibration()
     lines.append("🎯 DİNAMİK FIRSAT TOP 5 — NTSK HARİÇ")
     for rank, (_, row) in enumerate(top5.iterrows(), start=1):
-        rise_probability, jump_probability = _model_probabilities(row)
         lines.extend(
             [
                 f"{rank}. {row['Hisse']} — {row['Ufuk']} — {int(row['Fırsat Puanı'])}/100",
@@ -342,11 +324,14 @@ def _telegram_message(top5, scanned_count, ntsk_row=None, ntsk_context=None, unu
                 f"Fırsat alım bölgesi: ${row['Alım Alt']:.2f}–${row['Alım Üst']:.2f}",
                 f"Zarar kes / stop: ${row['Stop']:.2f}",
                 f"Kâr al / satış 1: ${row['Hedef 1']:.2f} | Satış 2: ${row['Hedef 2']:.2f}",
-                f"Model yükseliş ihtimali: %{rise_probability} | Sıçrama ihtimali: %{jump_probability}",
                 f"RSI: {row['RSI']:.1f} | Hacim: {row['Hacim Oranı']:.1f}x | Volatilite: %{row['Volatilite %']:.1f}",
-                "",
             ]
         )
+        lines.extend(calibrated_lines(row, calibration))
+        lines.append("")
+    regime_line = regime_summary_line(calibration)
+    if regime_line:
+        lines.extend(["📊 2025+ ayrı test — piyasa rejimleri", regime_line, ""])
     if unusual is not None and not unusual.empty:
         lines.append("⚡ OLAĞAN DIŞI HAREKETLER")
         for _, row in unusual.head(5).iterrows():
@@ -362,7 +347,7 @@ def _telegram_message(top5, scanned_count, ntsk_row=None, ntsk_context=None, unu
     lines.extend(
         [
             f"📊 {scanned_count} sembol toplu tarandı. NTSK fırsat TOP 5'ine dahil edilmedi.",
-            "⚠️ Seviyeler ve ihtimaller teknik model tahminidir; yatırım tavsiyesi veya gerçekleşme garantisi değildir.",
+            "⚠️ Olasılıklar 2020–2024 eğitiminden ayrı 2025+ geçmiş test verisidir; yatırım tavsiyesi veya garanti değildir.",
         ]
     )
     return "\n".join(lines)
