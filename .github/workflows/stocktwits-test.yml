@@ -31,8 +31,8 @@ jobs:
           mesaj += satirlar or ["", "ℹ️ Stocktwits şu anda veri vermedi; robot çalışmaya devam ediyor."]
           mesaj += ["", "⚠️ Bu bir testtir, yatırım tavsiyesi değildir."]
           cevap = requests.post(
-              f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
-              data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "\n".join(mesaj), "parse_mode": "HTML"},
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN'].strip()}/sendMessage",
+              data={"chat_id": os.environ["TELEGRAM_CHAT_ID"].strip(), "text": "\n".join(mesaj), "parse_mode": "HTML"},
               timeout=20,
           )
           cevap.raise_for_status()
