@@ -55,12 +55,12 @@ STOCKTWITS_MIN_ETIKET = 5
 
 # Gizli anahtarlar yalnız ortam değişkenlerinden okunur.
 def finnhub_key():
-    return os.getenv("FINNHUB_API_KEY", os.getenv("FINNHUB_KEY", ""))
+    return os.getenv("FINNHUB_API_KEY", os.getenv("FINNHUB_KEY", "")).strip()
 
 
 def telegram_token():
-    return os.getenv("TELEGRAM_BOT_TOKEN", os.getenv("TELEGRAM_TOKEN", ""))
+    return os.getenv("TELEGRAM_BOT_TOKEN", os.getenv("TELEGRAM_TOKEN", "")).strip()
 
 
 def telegram_chat_id():
-    return os.getenv("TELEGRAM_CHAT_ID", "")
+    return os.getenv("TELEGRAM_CHAT_ID", "").strip()
