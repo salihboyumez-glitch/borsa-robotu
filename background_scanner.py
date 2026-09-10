@@ -683,8 +683,14 @@ def main():
         if args.dry_run:
             print("Kuru çalıştırma: hareketler Telegram'a gönderilmedi")
             return 0
-        count = send_price_movement_alerts(full_watchlist)
-        print(f"{datetime.now().isoformat()} — fiyat hareketi taraması — sent={count}")
+        try:
+            count = send_price_movement_alerts(full_watchlist)
+            print(f"{datetime.now().isoformat()} — fiyat hareketi taraması — sent={count}")
+        except Exception as exc:
+            print(
+                f"Fiyat hareketi bildirimi hatası: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
         return 0
     if args.komut in ("haber", "hepsi"):
         if args.dry_run:
@@ -739,17 +745,30 @@ def main():
             else:
                 print(unusual[["Hisse", "Fiyat", "Günlük %", "Hacim Oranı"]].to_string(index=False))
             return 0
-        unusual_count = send_unusual_alerts(unusual) if args.komut == "hepsi" else 0
+        unusual_count = 0
+        if args.komut == "hepsi":
+            try:
+                unusual_count = send_unusual_alerts(unusual)
+            except Exception as exc:
+                print(
+                    f"Olağan dışı hareket bildirimi hatası: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
         slot = delivery_slot(now_ny)
         if slot or args.force:
-            sent, status = auto_send_top5(
-                top5,
-                len(active_watchlist),
-                ntsk_row=ntsk_row,
-                ntsk_context=context,
-                unusual=unusual,
-                delivery_key=slot or "zorunlu_test",
-            )
+            try:
+                sent, status = auto_send_top5(
+                    top5,
+                    len(active_watchlist),
+                    ntsk_row=ntsk_row,
+                    ntsk_context=context,
+                    unusual=unusual,
+                    delivery_key=slot or "zorunlu_test",
+                )
+            except Exception as exc:
+                sent = False
+                status = f"TOP 5 Telegram bildirimi başarısız: {type(exc).__name__}: {exc}"
+                print(status, file=sys.stderr)
         else:
             sent, status = False, "Normal TOP 5 mesaj dilimi bekleniyor"
         print(
