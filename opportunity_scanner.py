@@ -19,7 +19,33 @@ STATE_FILE = Path(__file__).with_name(".opportunity_telegram_state.json")
 EXCLUDED_FROM_TOP5 = {"NTSK"}
 STOP_ATR = cfg.STOP_ATR
 TARGET_1_R = cfg.HEDEF1_R
-TARGET_2_R = cfg.HEDEF2_R
+TARGET_2_R = cfg.HEDEF2_R def analyst_summary(symbol):
+    key = cfg.finnhub_key()
+    if not key:
+        return "Analist: veri anahtarı yok"
+    try:
+        target = requests.get(
+            "https://finnhub.io/api/v1/stock/price-target",
+            params={"symbol": symbol, "token": key},
+            timeout=10,
+        ).json()
+        recs = requests.get(
+            "https://finnhub.io/api/v1/stock/recommendation",
+            params={"symbol": symbol, "token": key},
+            timeout=10,
+        ).json()
+        latest = recs[0] if recs else {}
+        mean = target.get("targetMean")
+        if mean is None:
+            return "Analist: veri yok"
+        return (
+            f"Analist hedef: ${float(mean):.2f} | "
+            f"Buy {latest.get('buy', 0)} / "
+            f"Hold {latest.get('hold', 0)} / "
+            f"Sell {latest.get('sell', 0)}"
+        )
+    except Exception:
+        return "Analist: veri alınamadı"
 
 
 @st.cache_data(ttl=1800)
@@ -338,7 +364,7 @@ def _telegram_message(top5, scanned_count, ntsk_row=None, ntsk_context=None, unu
                 _entry_status(row),
                 f"Fırsat alım bölgesi: ${row['Alım Alt']:.2f}–${row['Alım Üst']:.2f}",
                 f"Zarar kes / stop: ${row['Stop']:.2f}",
-                f"Kâr al / satış 1: ${row['Hedef 1']:.2f} | Satış 2: ${row['Hedef 2']:.2f}",
+                f"Kâr al / satış 1: ${row['Hedef 1']:.2f} | Satış 2: ${row['Hedef 2']:.2f}", analyst_summary(str(row["Hisse"])),
                 f"RSI: {row['RSI']:.1f} | Hacim: {row['Hacim Oranı']:.1f}x | Volatilite: %{row['Volatilite %']:.1f}",
             ]
         )
