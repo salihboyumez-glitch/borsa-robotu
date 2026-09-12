@@ -69,6 +69,20 @@ def sosyal_ozet(sembol, simdi=None):
         if duygu.get("basic") in (YUKSELIS, DUSUS):
             etiketler[duygu["basic"]] += 1
     etiketli = sum(etiketler.values())
+    son_mesajlar = []
+    for tarih, mesaj in sorted(son_24, key=lambda x: x[0], reverse=True)[:8]:
+        govde = " ".join(str(mesaj.get("body", "")).split())
+        if not govde:
+            continue
+        duygu = ((mesaj.get("entities") or {}).get("sentiment") or {}).get("basic")
+        son_mesajlar.append(
+            {
+                "tarih": tarih.strftime("%Y-%m-%d %H:%M UTC"),
+                "duygu": duygu or "Etiketsiz",
+                "gorus": govde[:280] + ("…" if len(govde) > 280 else ""),
+            }
+        )
+
     return {
         "sembol": sembol,
         "mesaj_sayisi": len(son_24),
@@ -77,6 +91,7 @@ def sosyal_ozet(sembol, simdi=None):
         "trafik_katsayi": katsayi,
         "yukselis_orani": etiketler[YUKSELIS] / etiketli * 100 if etiketli else None,
         "etiketli_sayi": etiketli,
+        "son_mesajlar": son_mesajlar,
     }
 
 

@@ -19,7 +19,10 @@ STATE_FILE = Path(__file__).with_name(".opportunity_telegram_state.json")
 EXCLUDED_FROM_TOP5 = {"NTSK"}
 STOP_ATR = cfg.STOP_ATR
 TARGET_1_R = cfg.HEDEF1_R
-TARGET_2_R = cfg.HEDEF2_R def analyst_summary(symbol):
+TARGET_2_R = cfg.HEDEF2_R
+
+
+def analyst_summary(symbol):
     key = cfg.finnhub_key()
     if not key:
         return "Analist: veri anahtarı yok"

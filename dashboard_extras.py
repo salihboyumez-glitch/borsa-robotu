@@ -7,6 +7,7 @@ import requests
 import streamlit as st
 import yfinance as yf
 from dotenv import load_dotenv
+from stocktwits_social import sosyal_ozet
 
 
 load_dotenv()
@@ -86,6 +87,110 @@ def risk_plan(symbol, account_size, risk_percent):
         "Adet": quantity,
         "Azami Risk $": round(quantity * risk_per_share, 2),
     }
+
+
+def _zones_from_history(data):
+    """Fiyat geçmişinden izleme amaçlı teknik bölgeler üretir."""
+    if data is None or data.empty or len(data) < 20:
+        return None
+    enriched = add_indicators(data)
+    latest = enriched.iloc[-1]
+    price = float(latest["Close"])
+    atr = float(latest["ATR14"]) if pd.notna(latest["ATR14"]) else price * 0.03
+    atr = max(atr, price * 0.005)
+    support = float(enriched["Low"].tail(20).min())
+    resistance = float(enriched["High"].tail(20).max())
+    buy_low = max(0.01, support - 0.25 * atr)
+    buy_high = support + 0.25 * atr
+    sell_low = max(resistance - 0.25 * atr, buy_high)
+    sell_high = max(resistance + 0.25 * atr, sell_low)
+    return {
+        "Son Fiyat": round(price, 2),
+        "Alım Bölgesi Alt": round(buy_low, 2),
+        "Alım Bölgesi Üst": round(buy_high, 2),
+        "Zarar Kes": round(max(0.01, support - atr), 2),
+        "Satış Bölgesi Alt": round(sell_low, 2),
+        "Satış Bölgesi Üst": round(sell_high, 2),
+        "ATR": round(atr, 2),
+    }
+
+
+@st.cache_data(ttl=1800)
+def analyst_view(symbol):
+    """Yahoo Finance üzerindeki toplulaştırılmış analist verisini güvenli biçimde alır."""
+    result = {
+        "Hisse": symbol,
+        "Görüş": "Veri yok",
+        "Analist Sayısı": None,
+        "Hedef Düşük": None,
+        "Hedef Ortalama": None,
+        "Hedef Yüksek": None,
+    }
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info or {}
+        result.update(
+            {
+                "Görüş": str(info.get("recommendationKey") or "Veri yok").replace("_", " ").title(),
+                "Analist Sayısı": info.get("numberOfAnalystOpinions"),
+                "Hedef Düşük": info.get("targetLowPrice"),
+                "Hedef Ortalama": info.get("targetMeanPrice"),
+                "Hedef Yüksek": info.get("targetHighPrice"),
+            }
+        )
+    except Exception:
+        pass
+    return result
+
+
+@st.cache_data(ttl=600)
+def social_view(symbol):
+    return sosyal_ozet(symbol)
+
+
+def render_market_views(symbols):
+    st.header("🧭 Piyasa Görüşleri")
+    symbol = st.selectbox("İncelenecek hisse", symbols, key="market_view_symbol")
+    st.caption(
+        "Analist verisi, teknik fiyat bölgeleri ve kamuya açık sosyal medya konuşmaları "
+        "ayrı kaynaklardır; hiçbiri tek başına alım veya satım önerisi değildir."
+    )
+
+    st.subheader("👔 Analist görüşleri")
+    analyst = analyst_view(symbol)
+    st.dataframe(pd.DataFrame([analyst]), width="stretch", hide_index=True)
+    if analyst["Hedef Ortalama"] is None:
+        st.info("Bu hisse için güncel analist hedefi bulunamadı.")
+
+    st.subheader("🎯 Teknik alım / satım bölgeleri")
+    zones = _zones_from_history(extended_history(symbol, "6mo"))
+    if zones:
+        st.dataframe(pd.DataFrame([{**{"Hisse": symbol}, **zones}]), width="stretch", hide_index=True)
+        st.caption(
+            "Bölgeler son 20 işlem gününün destek/direnç seviyeleri ve ATR oynaklığıyla "
+            "hesaplanır. Emir veya kesin fiyat tahmini değildir."
+        )
+    else:
+        st.warning("Teknik bölgeleri hesaplamak için yeterli fiyat geçmişi yok.")
+
+    st.subheader("💬 Sosyal medya konuşmaları")
+    social = social_view(symbol)
+    if not social:
+        st.info("Son 24 saat için Stocktwits konuşma verisi bulunamadı veya kaynak erişilemiyor.")
+        return
+    bullish = social.get("yukselis_orani")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("24 saat mesaj", social.get("mesaj_sayisi", 0))
+    c2.metric("Etiketli görüş", social.get("etiketli_sayi", 0))
+    c3.metric("Yükseliş eğilimi", f"%{bullish:.0f}" if bullish is not None else "—")
+    messages = social.get("son_mesajlar") or []
+    if messages:
+        frame = pd.DataFrame(messages).rename(
+            columns={"tarih": "Tarih", "duygu": "Duygu", "gorus": "Görüş"}
+        )
+        frame["Duygu"] = frame["Duygu"].replace({"Bullish": "Yükseliş", "Bearish": "Düşüş", "Etiketsiz": "Nötr/etiketsiz"})
+        st.dataframe(frame, width="stretch", hide_index=True)
+    st.caption("Sosyal paylaşımlar kullanıcı üretimidir, doğrulanmamış olabilir ve yatırım tavsiyesi değildir.")
 
 
 def render_risk(symbols):
@@ -443,11 +548,13 @@ def render_extras(symbols, final_frame, api_key_present=False):
     st.title("🧰 Gelişmiş Yatırım Araçları")
     section = st.radio(
         "Araç seçin",
-        ["Hafif Araçlar", "Kurumsal Motor", "Risk", "Detay & Grafik", "Backtest", "Portföy", "Alarmlar", "Veri Kalitesi"],
+        ["Piyasa Görüşleri", "Hafif Araçlar", "Kurumsal Motor", "Risk", "Detay & Grafik", "Backtest", "Portföy", "Alarmlar", "Veri Kalitesi"],
         horizontal=True,
         label_visibility="collapsed",
     )
-    if section == "Kurumsal Motor":
+    if section == "Piyasa Görüşleri":
+        render_market_views(symbols)
+    elif section == "Kurumsal Motor":
         from institutional_engine import render_institutional_engine
 
         render_institutional_engine(final_frame)
