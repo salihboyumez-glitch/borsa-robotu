@@ -27,8 +27,8 @@
     "https://tr.tradingview.com/watchlists/42099764/",
     "https://tr.tradingview.com/watchlists/40819751/"
   ],
-  "synced_at": "2026-10-02T17:21:56.668559",
-  "count": 385,
+  "synced_at": "2026-10-05T20:22:24.357848",
+  "count": 387,
   "symbols": [
     "BIDU",
     "NTSK",
@@ -90,6 +90,7 @@
     "META",
     "GM",
     "QCOM",
+    "MRVL",
     "AVGO",
     "MU",
     "GE",
@@ -152,6 +153,7 @@
     "NMRK",
     "DLR",
     "BXP",
+    "LOW",
     "AAL",
     "ALGT",
     "DAL",
