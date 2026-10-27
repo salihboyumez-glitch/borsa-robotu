@@ -27,7 +27,7 @@
     "https://tr.tradingview.com/watchlists/42099764/",
     "https://tr.tradingview.com/watchlists/40819751/"
   ],
-  "synced_at": "2026-10-26T18:15:29.988343",
+  "synced_at": "2026-10-27T17:22:48.282596",
   "count": 399,
   "symbols": [
     "SKHY",
@@ -66,6 +66,7 @@
     "DELL",
     "BB",
     "CBRS",
+    "DT",
     "NOW",
     "SONY",
     "RTX",
@@ -74,16 +75,14 @@
     "QMLS",
     "AMKR",
     "CORZ",
-    "KVYO",
     "DOCN",
     "KEYS",
-    "MBLY",
     "RR",
     "SERV",
     "KOID",
-    "DT",
     "NCLD",
     "ACCV",
+    "LITE",
     "NVDA",
     "GOOG",
     "AAPL",
@@ -116,7 +115,6 @@
     "SMCI",
     "APLD",
     "CRDO",
-    "LITE",
     "ANET",
     "TWLO",
     "OKTA",
@@ -428,6 +426,8 @@
     "APP",
     "ACN",
     "SMTC",
-    "CANG"
+    "CANG",
+    "AI",
+    "TECK"
   ]
 }
