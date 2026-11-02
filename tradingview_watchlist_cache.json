@@ -27,7 +27,7 @@
     "https://tr.tradingview.com/watchlists/42099764/",
     "https://tr.tradingview.com/watchlists/40819751/"
   ],
-  "synced_at": "2026-10-30T17:44:17.602691",
+  "synced_at": "2026-11-02T21:24:10.657930",
   "count": 399,
   "symbols": [
     "SKHY",
@@ -93,6 +93,7 @@
     "MU",
     "AVGO",
     "QCOM",
+    "TSM",
     "MRVL",
     "GM",
     "GE",
@@ -422,7 +423,6 @@
     "NXE",
     "LEU",
     "UAMY",
-    "TSM",
     "APP",
     "ACN",
     "SMTC",
